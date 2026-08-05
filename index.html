@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>OpenCanvas64 - Realtime Canvas</title>
+    <title>OpenCanvas64 - Realtime Canvas with Shape Preview</title>
     <link rel="icon" type="image/x-icon" href="/favicon.ico">
     <style>
         body {
@@ -51,24 +51,33 @@
             font-weight: bold;
         }
 
-        button.danger-btn {
-            background-color: #f44336;
-        }
+        button.danger-btn { background-color: #f44336; }
+        button.admin-btn { background-color: #9c27b0; }
+        button.secondary-btn { background-color: #2196F3; }
 
-        button.admin-btn {
-            background-color: #9c27b0;
-        }
-
-        button.secondary-btn {
-            background-color: #2196F3;
-        }
-
-        canvas {
-            background-color: #ffffff;
-            cursor: crosshair;
+        .canvas-container {
             position: absolute;
             top: 0;
             left: 0;
+            width: 100vw;
+            height: 100vh;
+        }
+
+        canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+        }
+
+        #drawingCanvas {
+            background-color: #ffffff;
+            z-index: 1;
+        }
+
+        #previewCanvas {
+            z-index: 2;
+            cursor: crosshair;
+            pointer-events: auto;
         }
 
         .remote-cursor {
@@ -172,9 +181,7 @@
             font-size: 13px;
         }
 
-        .hidden {
-            display: none !important;
-        }
+        .hidden { display: none !important; }
 
         #banOverlay {
             background: rgba(180, 0, 0, 0.95);
@@ -212,7 +219,10 @@
         </div>
     </div>
 
-    <canvas id="drawingCanvas"></canvas>
+    <div class="canvas-container">
+        <canvas id="drawingCanvas"></canvas>
+        <canvas id="previewCanvas"></canvas>
+    </div>
 
     <div id="cursorsContainer"></div>
 
@@ -298,9 +308,13 @@
         const supabaseKey = 'sb_publishable_XTu1_XJMCZdkYJgeOqJjKw_MgmnLvF9'; 
         const db = window.supabase.createClient(supabaseUrl, supabaseKey);
 
-        // UI References
+        // Canvas References
         const canvas = document.getElementById('drawingCanvas');
         const ctx = canvas.getContext('2d');
+        const previewCanvas = document.getElementById('previewCanvas');
+        const pCtx = previewCanvas.getContext('2d');
+
+        // UI References
         const statusText = document.getElementById('statusText');
         const colorPicker = document.getElementById('colorPicker');
         const toolPicker = document.getElementById('toolPicker');
@@ -337,9 +351,30 @@
         const submitTextBtn = document.getElementById('submitTextBtn');
         const cancelTextBtn = document.getElementById('cancelTextBtn');
 
+        // Initialize Canvas Dimensions
+        function resizeCanvases() {
+            const tempCanvas = document.createElement('canvas');
+            tempCanvas.width = canvas.width;
+            tempCanvas.height = canvas.height;
+            const tempCtx = tempCanvas.getContext('2d');
+            tempCtx.drawImage(canvas, 0, 0);
+
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+            previewCanvas.width = window.innerWidth;
+            previewCanvas.height = window.innerHeight;
+
+            ctx.lineCap = 'round';
+            pCtx.lineCap = 'round';
+            ctx.drawImage(tempCanvas, 0, 0);
+        }
+
         canvas.width = window.innerWidth;
         canvas.height = window.innerHeight;
+        previewCanvas.width = window.innerWidth;
+        previewCanvas.height = window.innerHeight;
         ctx.lineCap = 'round';
+        pCtx.lineCap = 'round';
 
         let myName = localStorage.getItem('canvas_user_name') || "Anonymous";
         let myId = localStorage.getItem('canvas_my_id') || Math.random().toString(36).substr(2, 9);
@@ -418,7 +453,6 @@
 
         joinRoomBtn.addEventListener('click', async () => {
             const chosenName = nameInput.value.trim() || "Anonymous";
-
             myName = chosenName;
 
             const isDbBanned = await checkDatabaseBan();
@@ -503,7 +537,10 @@
             });
 
             room.on('broadcast', { event: 'clear_board' }, () => {
-                if (!isBanned) ctx.clearRect(0, 0, canvas.width, canvas.height);
+                if (!isBanned) {
+                    ctx.clearRect(0, 0, canvas.width, canvas.height);
+                    pCtx.clearRect(0, 0, previewCanvas.width, previewCanvas.height);
+                }
             });
 
             room.on('broadcast', { event: 'fill_board' }, (payload) => {
@@ -602,6 +639,7 @@
 
         adminClearBtn.addEventListener('click', async () => {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
+            pCtx.clearRect(0, 0, previewCanvas.width, previewCanvas.height);
             const blankCanvas = canvas.toDataURL();
             await db.from('whiteboard').insert([{ image_data: blankCanvas }]);
             if (room) room.send({ type: 'broadcast', event: 'clear_board' });
@@ -771,7 +809,11 @@
             await db.from('whiteboard').insert([{ image_data: canvasData }]);
         }
 
-        canvas.addEventListener('mousedown', (e) => {
+        // ==========================================
+        //  CANVAS DRAWING & LIVE PREVIEW ENGINE
+        // ==========================================
+
+        previewCanvas.addEventListener('mousedown', (e) => {
             if (isBanned || !startMenuModal.classList.contains('hidden')) return;
             isDrawing = true;
             startX = e.clientX;
@@ -801,35 +843,77 @@
                 });
                 saveToCloud();
             }
+            pCtx.clearRect(0, 0, previewCanvas.width, previewCanvas.height);
             textModal.classList.add('hidden');
         });
 
         cancelTextBtn.addEventListener('click', () => textModal.classList.add('hidden'));
 
-        canvas.addEventListener('mousemove', (e) => {
-            if (!isDrawing || isBanned || !startMenuModal.classList.contains('hidden')) return;
+        previewCanvas.addEventListener('mousemove', (e) => {
+            if (isBanned || !startMenuModal.classList.contains('hidden')) return;
             const tool = toolPicker.value;
 
-            if (tool === 'pencil') {
-                ctx.strokeStyle = colorPicker.value;
-                ctx.lineWidth = 5;
-                ctx.beginPath();
-                ctx.moveTo(lastX, lastY);
-                ctx.lineTo(e.clientX, e.clientY);
-                ctx.stroke();
+            // Clear ghost layer every frame
+            pCtx.clearRect(0, 0, previewCanvas.width, previewCanvas.height);
 
-                room.send({
-                    type: 'broadcast', event: 'draw',
-                    payload: { tool: 'pencil', senderId: myId, senderName: myName, x0: lastX, y0: lastY, x1: e.clientX, y1: e.clientY, color: colorPicker.value }
-                });
-                
-                lastX = e.clientX;
-                lastY = e.clientY;
+            // Active dragging logic
+            if (isDrawing) {
+                if (tool === 'pencil') {
+                    ctx.strokeStyle = colorPicker.value;
+                    ctx.lineWidth = 5;
+                    ctx.beginPath();
+                    ctx.moveTo(lastX, lastY);
+                    ctx.lineTo(e.clientX, e.clientY);
+                    ctx.stroke();
+
+                    room.send({
+                        type: 'broadcast', event: 'draw',
+                        payload: { tool: 'pencil', senderId: myId, senderName: myName, x0: lastX, y0: lastY, x1: e.clientX, y1: e.clientY, color: colorPicker.value }
+                    });
+                    
+                    lastX = e.clientX;
+                    lastY = e.clientY;
+                } else if (tool === 'square') {
+                    // Live shape preview on previewCanvas
+                    pCtx.strokeStyle = colorPicker.value;
+                    pCtx.fillStyle = colorPicker.value + "44"; // Semi-transparent preview fill
+                    pCtx.lineWidth = 2;
+                    pCtx.setLineDash([6, 6]); // Dashed outline preview
+
+                    const w = e.clientX - startX;
+                    const h = e.clientY - startY;
+                    pCtx.fillRect(startX, startY, w, h);
+                    pCtx.strokeRect(startX, startY, w, h);
+                    pCtx.setLineDash([]); // Reset line dash
+                } else if (tool === 'circle') {
+                    // Live circle preview on previewCanvas
+                    pCtx.strokeStyle = colorPicker.value;
+                    pCtx.fillStyle = colorPicker.value + "44";
+                    pCtx.lineWidth = 2;
+                    pCtx.setLineDash([6, 6]);
+
+                    const radius = Math.sqrt(Math.pow(e.clientX - startX, 2) + Math.pow(e.clientY - startY, 2));
+                    pCtx.beginPath();
+                    pCtx.arc(startX, startY, radius, 0, 2 * Math.PI);
+                    pCtx.fill();
+                    pCtx.stroke();
+                    pCtx.setLineDash([]);
+                }
+            } else if (tool === 'text') {
+                // Show a text placement indicator target
+                pCtx.strokeStyle = colorPicker.value;
+                pCtx.fillStyle = colorPicker.value + "aa";
+                pCtx.font = "20px Arial";
+                pCtx.fillText("T | Click to type", e.clientX, e.clientY);
             }
         });
 
         window.addEventListener('mouseup', (e) => {
             if (isBanned || !startMenuModal.classList.contains('hidden')) return;
+
+            // Clear preview ghost
+            pCtx.clearRect(0, 0, previewCanvas.width, previewCanvas.height);
+
             if (isDrawing && toolPicker.value !== 'pencil' && toolPicker.value !== 'text') {
                 const endX = e.clientX;
                 const endY = e.clientY;
@@ -862,18 +946,7 @@
             }
         });
 
-        window.addEventListener('resize', () => {
-            const tempCanvas = document.createElement('canvas');
-            tempCanvas.width = canvas.width;
-            tempCanvas.height = canvas.height;
-            const tempCtx = tempCanvas.getContext('2d');
-            tempCtx.drawImage(canvas, 0, 0);
-
-            canvas.width = window.innerWidth;
-            canvas.height = window.innerHeight;
-            ctx.lineCap = 'round';
-            ctx.drawImage(tempCanvas, 0, 0);
-        });
+        window.addEventListener('resize', resizeCanvases);
     </script>
 </body>
 </html>
