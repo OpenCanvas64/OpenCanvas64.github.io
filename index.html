@@ -292,7 +292,7 @@
     </div>
 
     <script>
-        // Supabase Initialization
+        // Supabase Credentials
         const supabaseUrl = 'https://uyvlsurevydjaxxnlyxh.supabase.co';
         const supabaseKey = 'sb_publishable_XTu1_XJMCZdkYJgeOqJjKw_MgmnLvF9'; 
         const db = window.supabase.createClient(supabaseUrl, supabaseKey);
@@ -502,9 +502,13 @@
             });
 
             room.on('broadcast', { event: 'ban_player' }, (payload) => {
-                const { id, name } = payload.payload;
+                const { id, name, updatedBannedMap } = payload.payload;
 
-                bannedPlayers[id] = name || 'Unknown';
+                if (updatedBannedMap) {
+                    bannedPlayers = updatedBannedMap;
+                } else {
+                    bannedPlayers[id] = name || 'Unknown';
+                }
                 localStorage.setItem('canvas_banned_map', JSON.stringify(bannedPlayers));
 
                 const targetCursor = document.getElementById(`cursor-${id}`);
@@ -520,17 +524,22 @@
             });
 
             room.on('broadcast', { event: 'unban_player' }, (payload) => {
-                const { id } = payload.payload;
+                const { id, updatedBannedMap } = payload.payload;
 
-                delete bannedPlayers[id];
+                if (updatedBannedMap) {
+                    bannedPlayers = updatedBannedMap;
+                } else {
+                    delete bannedPlayers[id];
+                }
                 localStorage.setItem('canvas_banned_map', JSON.stringify(bannedPlayers));
 
                 if (id === myId) {
                     isBanned = false;
                     localStorage.removeItem('canvas_banned');
                     banOverlay.classList.add('hidden');
-                    alert("You have been unbanned by an administrator.");
-                    location.reload();
+                    startMenuModal.classList.remove('hidden');
+                    statusText.innerText = "Unbanned! You can now join.";
+                    statusText.style.color = "#ffaa00";
                 }
 
                 updateBannedListUI();
@@ -568,7 +577,6 @@
             loadSavedCanvas();
         }
 
-        // Throttled cursor broadcast to prevent rate limits
         function broadcastCursor(x, y) {
             const now = Date.now();
             if (room && !isBanned && (now - lastCursorSend > 35)) {
@@ -665,7 +673,11 @@
                 localStorage.setItem('canvas_banned_map', JSON.stringify(bannedPlayers));
 
                 if (room) {
-                    room.send({ type: 'broadcast', event: 'ban_player', payload: { id: targetId, name: targetName } });
+                    room.send({ 
+                        type: 'broadcast', 
+                        event: 'ban_player', 
+                        payload: { id: targetId, name: targetName, updatedBannedMap: bannedPlayers } 
+                    });
                 }
                 
                 const targetCursor = document.getElementById(`cursor-${targetId}`);
@@ -684,7 +696,11 @@
                 localStorage.setItem('canvas_banned_map', JSON.stringify(bannedPlayers));
 
                 if (room) {
-                    room.send({ type: 'broadcast', event: 'unban_player', payload: { id: targetId } });
+                    room.send({ 
+                        type: 'broadcast', 
+                        event: 'unban_player', 
+                        payload: { id: targetId, updatedBannedMap: bannedPlayers } 
+                    });
                 }
 
                 updateBannedListUI();
