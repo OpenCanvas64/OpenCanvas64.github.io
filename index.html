@@ -35,7 +35,7 @@
             gap: 6px;
         }
 
-        button, select, input[type="color"], input[type="text"] {
+        button, select, input[type="color"], input[type="text"], input[type="password"] {
             padding: 6px 10px;
             border-radius: 4px;
             border: none;
@@ -52,6 +52,10 @@
 
         button.danger-btn {
             background-color: #f44336;
+        }
+
+        button.admin-btn {
+            background-color: #9c27b0;
         }
 
         canvas {
@@ -107,13 +111,14 @@
             user-select: none;
         }
 
+        /* Modals & Menus */
         .modal-overlay {
             position: fixed;
             top: 0;
             left: 0;
             width: 100vw;
             height: 100vh;
-            background: rgba(0,0,0,0.6);
+            background: rgba(0,0,0,0.75);
             display: flex;
             justify-content: center;
             align-items: center;
@@ -123,12 +128,39 @@
         .modal-box {
             background: white;
             padding: 24px;
-            border-radius: 8px;
+            border-radius: 12px;
             display: flex;
             flex-direction: column;
-            gap: 12px;
-            width: 300px;
+            gap: 14px;
+            width: 320px;
             color: #222;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+        }
+
+        .modal-box h2, .modal-box h3 {
+            margin: 0;
+            text-align: center;
+        }
+
+        .player-list {
+            max-height: 150px;
+            overflow-y: auto;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            padding: 6px;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .player-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: #f8f8f8;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 13px;
         }
 
         .hidden {
@@ -153,7 +185,7 @@
                 <option value="text">Text</option>
             </select>
         </div>
-        <button id="clearBtn" class="danger-btn">Clear Canvas</button>
+        <button id="openAdminBtn" class="admin-btn">Admin Menu</button>
         <div class="tool-group" id="statusText" style="color: #ffaa00; margin-left: 8px;">
             Connecting...
         </div>
@@ -165,11 +197,48 @@
 
     <div id="pingDisplay">Ping: -- ms</div>
 
-    <div id="nameModal" class="modal-overlay">
+    <div id="startMenuModal" class="modal-overlay">
         <div class="modal-box">
-            <h3>Enter Your Display Name</h3>
+            <h2>🎨 Canvas Room</h2>
+            <label style="font-weight: bold; font-size: 13px;">Enter Your Name:</label>
             <input type="text" id="nameInput" placeholder="Name..." value="Anonymous">
-            <button id="joinBtn">Join Room</button>
+            <button id="joinRoomBtn" style="padding: 10px; font-size: 16px;">Join Canvas</button>
+        </div>
+    </div>
+
+    <div id="adminModal" class="modal-overlay hidden">
+        <div id="adminLoginBox" class="modal-box">
+            <h3>🔒 Admin Login</h3>
+            <input type="password" id="adminPasswordInput" placeholder="Enter Admin Password...">
+            <div style="display: flex; gap: 8px; justify-content: flex-end;">
+                <button id="closeAdminLoginBtn" style="background: #888;">Cancel</button>
+                <button id="submitAdminLoginBtn" class="admin-btn">Login</button>
+            </div>
+        </div>
+
+        <div id="adminDashboardBox" class="modal-box hidden" style="width: 360px;">
+            <h3>🛠️ Admin Control Panel</h3>
+            
+            <div style="display: flex; gap: 8px;">
+                <button id="adminClearBtn" class="danger-btn" style="flex: 1;">Clear Canvas</button>
+            </div>
+
+            <hr style="width: 100%; border: 0; border-top: 1px solid #ddd; margin: 4px 0;">
+
+            <div style="display: flex; align-items: center; justify-content: space-between;">
+                <label style="font-weight: bold; font-size: 13px;">Fill Screen Color:</label>
+                <input type="color" id="fillColorPicker" value="#ffffff">
+                <button id="adminFillBtn">Fill Screen</button>
+            </div>
+
+            <hr style="width: 100%; border: 0; border-top: 1px solid #ddd; margin: 4px 0;">
+
+            <label style="font-weight: bold; font-size: 13px;">Connected Players:</label>
+            <div id="playerListContainer" class="player-list">
+                <div style="color: #888; font-size: 12px; text-align: center;">No active players</div>
+            </div>
+
+            <button id="closeAdminDashBtn" style="background: #888; margin-top: 8px;">Close Admin Menu</button>
         </div>
     </div>
 
@@ -190,19 +259,34 @@
         const supabaseKey = 'sb_publishable_XTu1_XJMCZdkYJgeOqJjKw_MgmnLvF9'; 
         const db = window.supabase.createClient(supabaseUrl, supabaseKey);
 
-        // --- 2. ELEMENT SETUP ---
+        // --- 2. ELEMENT REFERENCES ---
         const canvas = document.getElementById('drawingCanvas');
         const ctx = canvas.getContext('2d');
         const statusText = document.getElementById('statusText');
         const colorPicker = document.getElementById('colorPicker');
         const toolPicker = document.getElementById('toolPicker');
         const cursorsContainer = document.getElementById('cursorsContainer');
-        const clearBtn = document.getElementById('clearBtn');
         const pingDisplay = document.getElementById('pingDisplay');
 
-        const nameModal = document.getElementById('nameModal');
+        // Modals
+        const startMenuModal = document.getElementById('startMenuModal');
         const nameInput = document.getElementById('nameInput');
-        const joinBtn = document.getElementById('joinBtn');
+        const joinRoomBtn = document.getElementById('joinRoomBtn');
+
+        const adminModal = document.getElementById('adminModal');
+        const adminLoginBox = document.getElementById('adminLoginBox');
+        const adminDashboardBox = document.getElementById('adminDashboardBox');
+        const openAdminBtn = document.getElementById('openAdminBtn');
+        const adminPasswordInput = document.getElementById('adminPasswordInput');
+        const submitAdminLoginBtn = document.getElementById('submitAdminLoginBtn');
+        const closeAdminLoginBtn = document.getElementById('closeAdminLoginBtn');
+        const closeAdminDashBtn = document.getElementById('closeAdminDashBtn');
+
+        const adminClearBtn = document.getElementById('adminClearBtn');
+        const adminFillBtn = document.getElementById('adminFillBtn');
+        const fillColorPicker = document.getElementById('fillColorPicker');
+        const playerListContainer = document.getElementById('playerListContainer');
+
         const textModal = document.getElementById('textModal');
         const canvasTextInput = document.getElementById('canvasTextInput');
         const submitTextBtn = document.getElementById('submitTextBtn');
@@ -212,23 +296,25 @@
         canvas.height = window.innerHeight;
         ctx.lineCap = 'round';
 
-        let myName = localStorage.getItem('canvas_user_name') || "Anonymous";
-        let myId = Math.random().toString(36).substr(2, 9);
+        let myName = "Anonymous";
+        let myId = localStorage.getItem('canvas_my_id') || Math.random().toString(36).substr(2, 9);
+        localStorage.setItem('canvas_my_id', myId);
+
         let room;
+        let activePlayers = {}; // Track players for Admin Menu
+        let isBanned = localStorage.getItem('canvas_banned') === 'true';
 
         let isDrawing = false;
         let startX = 0, startY = 0;
         let lastX = 0, lastY = 0;
         let pendingTextCoords = { x: 0, y: 0 };
 
-        // Auto-join if user has saved name
+        // Pre-fill name from localStorage
         if (localStorage.getItem('canvas_user_name')) {
             nameInput.value = localStorage.getItem('canvas_user_name');
-            nameModal.classList.add('hidden');
-            initMultiplayer();
         }
 
-        // --- 3. PING LOGIC (REST API HEAD REQUEST) ---
+        // --- 3. PING LOGIC ---
         function measurePing() {
             const startTime = performance.now();
             fetch(`${supabaseUrl}/rest/v1/`, {
@@ -243,18 +329,22 @@
                 pingDisplay.innerText = `Ping: Error`;
             });
         }
-
         measurePing();
         setInterval(measurePing, 3000);
 
-        // --- 4. MULTIPLAYER SETUP ---
-        joinBtn.addEventListener('click', () => {
+        // --- 4. START MENU LOGIC ---
+        joinRoomBtn.addEventListener('click', () => {
+            if (isBanned) {
+                alert("You are banned from this canvas room.");
+                return;
+            }
             myName = nameInput.value.trim() || "Anonymous";
             localStorage.setItem('canvas_user_name', myName);
-            nameModal.classList.add('hidden');
+            startMenuModal.classList.add('hidden');
             initMultiplayer();
         });
 
+        // --- 5. MULTIPLAYER SETUP ---
         function initMultiplayer() {
             if (room) return;
 
@@ -280,11 +370,13 @@
             room.on('broadcast', { event: 'cursor' }, (payload) => {
                 const d = payload.payload;
                 
-                // Skip self-cursor
+                // Track active player for admin list
+                activePlayers[d.id] = { name: d.name, lastSeen: Date.now() };
+                updatePlayerListUI();
+
                 if (d.id === myId) return;
 
                 let cursorEl = document.getElementById(`cursor-${d.id}`);
-                
                 if (!cursorEl) {
                     cursorEl = document.createElement('div');
                     cursorEl.id = `cursor-${d.id}`;
@@ -295,7 +387,6 @@
                     `;
                     cursorsContainer.appendChild(cursorEl);
                 }
-                
                 cursorEl.style.left = `${d.x}px`;
                 cursorEl.style.top = `${d.y}px`;
             });
@@ -304,10 +395,30 @@
                 ctx.clearRect(0, 0, canvas.width, canvas.height);
             });
 
+            room.on('broadcast', { event: 'fill_board' }, (payload) => {
+                ctx.fillStyle = payload.payload.color;
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+            });
+
+            room.on('broadcast', { event: 'ban_player' }, (payload) => {
+                if (payload.payload.id === myId) {
+                    isBanned = true;
+                    localStorage.setItem('canvas_banned', 'true');
+                    alert("You have been banned by an administrator.");
+                    window.location.reload();
+                } else {
+                    // Remove banned player's cursor
+                    const bannedCursor = document.getElementById(`cursor-${payload.payload.id}`);
+                    if (bannedCursor) bannedCursor.remove();
+                    delete activePlayers[payload.payload.id];
+                    updatePlayerListUI();
+                }
+            });
+
             room.subscribe();
 
             window.addEventListener('mousemove', (e) => {
-                if (room) {
+                if (room && !isBanned) {
                     room.send({
                         type: 'broadcast',
                         event: 'cursor',
@@ -319,7 +430,92 @@
             loadSavedCanvas();
         }
 
-        // --- 5. DATA LOGIC ---
+        // --- 6. ADMIN SYSTEM ---
+        openAdminBtn.addEventListener('click', () => {
+            adminModal.classList.remove('hidden');
+        });
+
+        closeAdminLoginBtn.addEventListener('click', () => {
+            adminModal.classList.add('hidden');
+        });
+
+        closeAdminDashBtn.addEventListener('click', () => {
+            adminModal.classList.add('hidden');
+        });
+
+        submitAdminLoginBtn.addEventListener('click', () => {
+            if (adminPasswordInput.value === "Admin2341") {
+                adminLoginBox.classList.add('hidden');
+                adminDashboardBox.classList.remove('hidden');
+                adminPasswordInput.value = '';
+                updatePlayerListUI();
+            } else {
+                alert("Incorrect Admin Password!");
+            }
+        });
+
+        adminClearBtn.addEventListener('click', async () => {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            const blankCanvas = canvas.toDataURL();
+            await db.from('whiteboard').insert([{ image_data: blankCanvas }]);
+            if (room) room.send({ type: 'broadcast', event: 'clear_board' });
+        });
+
+        adminFillBtn.addEventListener('click', async () => {
+            const fillCol = fillColorPicker.value;
+            ctx.fillStyle = fillCol;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            saveToCloud();
+            if (room) room.send({ type: 'broadcast', event: 'fill_board', payload: { color: fillCol } });
+        });
+
+        function updatePlayerListUI() {
+            if (adminDashboardBox.classList.contains('hidden')) return;
+
+            playerListContainer.innerHTML = '';
+            const playerIds = Object.keys(activePlayers);
+
+            if (playerIds.length === 0) {
+                playerListContainer.innerHTML = `<div style="color: #888; font-size: 12px; text-align: center;">No active players</div>`;
+                return;
+            }
+
+            playerIds.forEach(id => {
+                const player = activePlayers[id];
+                const div = document.createElement('div');
+                div.className = 'player-item';
+                div.innerHTML = `
+                    <span><strong>${player.name}</strong> ${id === myId ? '(You)' : ''}</span>
+                    ${id !== myId ? `<button class="danger-btn" style="padding: 2px 6px; font-size: 11px;" onclick="banUser('${id}')">Ban</button>` : ''}
+                `;
+                playerListContainer.appendChild(div);
+            });
+        }
+
+        window.banUser = (targetId) => {
+            if (confirm(`Are you sure you want to ban player ${activePlayers[targetId]?.name || targetId}?`)) {
+                if (room) {
+                    room.send({ type: 'broadcast', event: 'ban_player', payload: { id: targetId } });
+                }
+                delete activePlayers[targetId];
+                updatePlayerListUI();
+            }
+        };
+
+        // Clear out inactive players from admin list every 10 seconds
+        setInterval(() => {
+            const now = Date.now();
+            Object.keys(activePlayers).forEach(id => {
+                if (now - activePlayers[id].lastSeen > 10000) {
+                    delete activePlayers[id];
+                    const staleCursor = document.getElementById(`cursor-${id}`);
+                    if (staleCursor) staleCursor.remove();
+                }
+            });
+            updatePlayerListUI();
+        }, 10000);
+
+        // --- 7. DATA LOGIC ---
         async function loadSavedCanvas() {
             const { data } = await db
                 .from('whiteboard')
@@ -346,26 +542,9 @@
             await db.from('whiteboard').insert([{ image_data: canvasData }]);
         }
 
-        async function executeClear() {
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-            const blankCanvas = canvas.toDataURL();
-            await db.from('whiteboard').insert([{ image_data: blankCanvas }]);
-
-            if (room) {
-                room.send({ type: 'broadcast', event: 'clear_board' });
-            }
-        }
-
-        clearBtn.addEventListener('click', () => executeClear());
-
-        window.clear = {
-            canvas: (code) => {
-                if (code === "code=Admin2341") executeClear();
-            }
-        };
-
-        // --- 6. DRAWING LOGIC ---
+        // --- 8. DRAWING LOGIC ---
         canvas.addEventListener('mousedown', (e) => {
+            if (isBanned) return;
             isDrawing = true;
             startX = e.clientX;
             startY = e.clientY;
@@ -383,7 +562,7 @@
 
         submitTextBtn.addEventListener('click', () => {
             const userInput = canvasTextInput.value.trim();
-            if (userInput) {
+            if (userInput && !isBanned) {
                 ctx.fillStyle = colorPicker.value;
                 ctx.font = "20px Arial";
                 ctx.fillText(userInput, pendingTextCoords.x, pendingTextCoords.y);
@@ -400,7 +579,7 @@
         cancelTextBtn.addEventListener('click', () => textModal.classList.add('hidden'));
 
         canvas.addEventListener('mousemove', (e) => {
-            if (!isDrawing) return;
+            if (!isDrawing || isBanned) return;
             const tool = toolPicker.value;
 
             if (tool === 'pencil') {
@@ -422,6 +601,7 @@
         });
 
         window.addEventListener('mouseup', (e) => {
+            if (isBanned) return;
             if (isDrawing && toolPicker.value !== 'pencil' && toolPicker.value !== 'text') {
                 const endX = e.clientX;
                 const endY = e.clientY;
