@@ -136,7 +136,7 @@
             display: flex;
             flex-direction: column;
             gap: 14px;
-            width: 320px;
+            width: 340px;
             color: #222;
             box-shadow: 0 8px 24px rgba(0,0,0,0.3);
         }
@@ -154,7 +154,7 @@
         }
 
         .player-list {
-            max-height: 150px;
+            max-height: 120px;
             overflow-y: auto;
             border: 1px solid #ccc;
             border-radius: 4px;
@@ -232,7 +232,7 @@
             </div>
         </div>
 
-        <div id="adminDashboardBox" class="modal-box hidden" style="width: 360px;">
+        <div id="adminDashboardBox" class="modal-box hidden" style="width: 380px;">
             <h3>🛠️ Admin Control Panel</h3>
             
             <div style="display: flex; gap: 8px;">
@@ -252,6 +252,11 @@
             <label style="font-weight: bold; font-size: 13px;">Connected Players:</label>
             <div id="playerListContainer" class="player-list">
                 <div style="color: #888; font-size: 12px; text-align: center;">No active players</div>
+            </div>
+
+            <label style="font-weight: bold; font-size: 13px; margin-top: 4px;">Banned Players:</label>
+            <div id="bannedListContainer" class="player-list">
+                <div style="color: #888; font-size: 12px; text-align: center;">No banned players</div>
             </div>
 
             <button id="closeAdminDashBtn" style="background: #888; margin-top: 8px;">Close Admin Menu</button>
@@ -306,6 +311,7 @@
         const adminFillBtn = document.getElementById('adminFillBtn');
         const fillColorPicker = document.getElementById('fillColorPicker');
         const playerListContainer = document.getElementById('playerListContainer');
+        const bannedListContainer = document.getElementById('bannedListContainer');
 
         const textModal = document.getElementById('textModal');
         const canvasTextInput = document.getElementById('canvasTextInput');
@@ -322,7 +328,8 @@
 
         let room;
         let activePlayers = {}; 
-        let isBanned = localStorage.getItem('canvas_banned') === 'true';
+        let bannedPlayers = JSON.parse(localStorage.getItem('canvas_banned_map') || '{}'); 
+        let isBanned = localStorage.getItem('canvas_banned') === 'true' || !!bannedPlayers[myId];
 
         let isDrawing = false;
         let startX = 0, startY = 0;
@@ -333,7 +340,6 @@
             nameInput.value = localStorage.getItem('canvas_user_name');
         }
 
-        // Initialize connection early to listen for active names
         initMultiplayer();
 
         // --- 3. PING LOGIC ---
@@ -380,7 +386,6 @@
             localStorage.setItem('canvas_user_name', myName);
             startMenuModal.classList.add('hidden');
             
-            // Broadcast cursor to register active name immediately
             broadcastCursor(0, 0);
             statusText.innerText = `Connected as ${myName}`;
             statusText.style.color = "#44ff44";
@@ -425,7 +430,8 @@
             room.on('broadcast', { event: 'cursor' }, (payload) => {
                 const d = payload.payload;
                 
-                // Track active players for Name checking & Admin Panel
+                if (bannedPlayers[d.id]) return;
+
                 activePlayers[d.id] = { name: d.name, lastSeen: Date.now() };
                 updatePlayerListUI();
 
@@ -458,17 +464,39 @@
             });
 
             room.on('broadcast', { event: 'ban_player' }, (payload) => {
-                if (payload.payload.id === myId) {
+                const { id, name } = payload.payload;
+
+                bannedPlayers[id] = name || 'Unknown';
+                localStorage.setItem('canvas_banned_map', JSON.stringify(bannedPlayers));
+
+                const targetCursor = document.getElementById(`cursor-${id}`);
+                if (targetCursor) targetCursor.remove();
+
+                delete activePlayers[id];
+                updatePlayerListUI();
+                updateBannedListUI();
+
+                if (id === myId) {
                     isBanned = true;
                     localStorage.setItem('canvas_banned', 'true');
                     alert("You have been banned by an administrator.");
                     window.location.reload();
-                } else {
-                    const bannedCursor = document.getElementById(`cursor-${payload.payload.id}`);
-                    if (bannedCursor) bannedCursor.remove();
-                    delete activePlayers[payload.payload.id];
-                    updatePlayerListUI();
                 }
+            });
+
+            room.on('broadcast', { event: 'unban_player' }, (payload) => {
+                const { id } = payload.payload;
+
+                delete bannedPlayers[id];
+                localStorage.setItem('canvas_banned_map', JSON.stringify(bannedPlayers));
+
+                if (id === myId) {
+                    isBanned = false;
+                    localStorage.removeItem('canvas_banned');
+                    alert("You have been unbanned by an administrator.");
+                }
+
+                updateBannedListUI();
             });
 
             room.subscribe();
@@ -511,6 +539,7 @@
                 adminDashboardBox.classList.remove('hidden');
                 adminPasswordInput.value = '';
                 updatePlayerListUI();
+                updateBannedListUI();
             } else {
                 alert("Incorrect Admin Password!");
             }
@@ -554,17 +583,62 @@
             });
         }
 
+        function updateBannedListUI() {
+            if (adminDashboardBox.classList.contains('hidden')) return;
+
+            bannedListContainer.innerHTML = '';
+            const bannedIds = Object.keys(bannedPlayers);
+
+            if (bannedIds.length === 0) {
+                bannedListContainer.innerHTML = `<div style="color: #888; font-size: 12px; text-align: center;">No banned players</div>`;
+                return;
+            }
+
+            bannedIds.forEach(id => {
+                const name = bannedPlayers[id];
+                const div = document.createElement('div');
+                div.className = 'player-item';
+                div.innerHTML = `
+                    <span><strong>${name}</strong> <small style="color: #888;">(${id})</small></span>
+                    <button class="secondary-btn" style="padding: 2px 6px; font-size: 11px;" onclick="unbanUser('${id}')">Unban</button>
+                `;
+                bannedListContainer.appendChild(div);
+            });
+        }
+
         window.banUser = (targetId) => {
-            if (confirm(`Are you sure you want to ban player ${activePlayers[targetId]?.name || targetId}?`)) {
+            const targetName = activePlayers[targetId]?.name || targetId;
+            if (confirm(`Are you sure you want to ban player ${targetName}?`)) {
+                bannedPlayers[targetId] = targetName;
+                localStorage.setItem('canvas_banned_map', JSON.stringify(bannedPlayers));
+
                 if (room) {
-                    room.send({ type: 'broadcast', event: 'ban_player', payload: { id: targetId } });
+                    room.send({ type: 'broadcast', event: 'ban_player', payload: { id: targetId, name: targetName } });
                 }
+                
+                const targetCursor = document.getElementById(`cursor-${targetId}`);
+                if (targetCursor) targetCursor.remove();
                 delete activePlayers[targetId];
+
                 updatePlayerListUI();
+                updateBannedListUI();
             }
         };
 
-        // Clear out inactive players from active list every 10 seconds
+        window.unbanUser = (targetId) => {
+            const targetName = bannedPlayers[targetId] || targetId;
+            if (confirm(`Unban player ${targetName}?`)) {
+                delete bannedPlayers[targetId];
+                localStorage.setItem('canvas_banned_map', JSON.stringify(bannedPlayers));
+
+                if (room) {
+                    room.send({ type: 'broadcast', event: 'unban_player', payload: { id: targetId } });
+                }
+
+                updateBannedListUI();
+            }
+        };
+
         setInterval(() => {
             const now = Date.now();
             Object.keys(activePlayers).forEach(id => {
