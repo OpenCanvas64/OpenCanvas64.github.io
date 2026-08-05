@@ -309,8 +309,19 @@
 
         const lobbyView = document.getElementById('lobbyView'), mainAppView = document.getElementById('mainAppView');
         const globalNameInput = document.getElementById('globalNameInput');
-        globalNameInput.value = localStorage.getItem('canvas_user_name') || "Anonymous";
-        globalNameInput.addEventListener('input', (e) => localStorage.setItem('canvas_user_name', e.target.value.trim()));
+        
+        // --- SANITIZE USERNAME (NO SPACES ALLOWED) ---
+        const initialSavedName = (localStorage.getItem('canvas_user_name') || "Anonymous").replace(/\s+/g, '');
+        globalNameInput.value = initialSavedName || "Anonymous";
+        localStorage.setItem('canvas_user_name', globalNameInput.value);
+
+        globalNameInput.addEventListener('input', (e) => {
+            const cleanName = e.target.value.replace(/\s+/g, '');
+            if (e.target.value !== cleanName) {
+                e.target.value = cleanName;
+            }
+            localStorage.setItem('canvas_user_name', cleanName);
+        });
 
         const drawingCanvas = document.getElementById('drawingCanvas'), dCtx = drawingCanvas.getContext('2d');
         const previewCanvas = document.getElementById('previewCanvas'), pCtx = previewCanvas.getContext('2d');
@@ -509,7 +520,7 @@
         }
 
         async function connectToRoom(roomData) {
-            const myName = globalNameInput.value.trim() || "Anonymous";
+            const myName = globalNameInput.value.replace(/\s+/g, '') || "Anonymous";
             currentRoomData = roomData; currentRoomId = roomData.room_id;
 
             if (!roomData.is_public) {
@@ -557,7 +568,7 @@
 
             roomChannel = db.channel(`room_${currentRoomId}`, { config: { presence: { key: myId } } });
             
-            // --- PRESENCE EVENTS (JOIN/LEAVE CHAT & PERSISTENCE) ---
+            // --- PRESENCE EVENTS ---
             roomChannel
                 .on('presence', { event: 'sync' }, () => {
                     const state = roomChannel.presenceState();
@@ -720,7 +731,6 @@
                 });
             });
 
-            // INSTANT CURSOR COLOR UPDATE
             document.getElementById('colorPicker').addEventListener('input', (e) => {
                 if ((isBanned && !isDev) || !roomChannel) return;
                 roomChannel.send({ 
@@ -763,14 +773,11 @@
                 }
 
                 if (cmd === '/msg' || cmd === '/whisper') {
-                    const spaceIdx = msg.indexOf(' ');
-                    if (spaceIdx === -1) return appendChat("[System]: Usage: /msg <User> <Message>", 'system');
-                    const rest = msg.substring(spaceIdx + 1).trim();
-                    const secondSpaceIdx = rest.indexOf(' ');
-                    if (secondSpaceIdx === -1) return appendChat("[System]: Usage: /msg <User> <Message>", 'system');
+                    const args = msg.substring(cmd.length).trim().split(' ');
+                    if (args.length < 2) return appendChat("[System]: Usage: /msg <User> <Message>", 'system');
                     
-                    const targetNameInput = rest.substring(0, secondSpaceIdx).trim();
-                    const messageText = rest.substring(secondSpaceIdx + 1).trim();
+                    const targetNameInput = args[0];
+                    const messageText = args.slice(1).join(' ');
 
                     const targetId = Object.keys(activePlayers).find(id => activePlayers[id].name.toLowerCase() === targetNameInput.toLowerCase());
 
@@ -816,13 +823,15 @@
                     const expires = mins ? new Date(Date.now() + mins * 60000).toISOString() : null;
                     const finalReason = reason.trim() || 'No reason provided';
 
-                    await db.from('banned_users').insert([{ 
+                    const { error } = await db.from('banned_users').insert([{ 
                         room_id: currentRoomId, 
                         user_id: targetId, 
                         user_name: targetName, 
                         expires_at: expires, 
                         reason: finalReason 
                     }]);
+
+                    if (error) console.error("Database insert error:", error);
 
                     if (roomChannel) {
                         roomChannel.send({ 
@@ -988,13 +997,19 @@
             const table = type === 'ban' ? 'banned_users' : 'muted_users';
             
             if (confirm(`${type.toUpperCase()} ${name}?`)) {
-                await db.from(table).insert([{ 
+                const { error } = await db.from(table).insert([{ 
                     room_id: currentRoomId, 
                     user_id: id, 
                     user_name: name, 
                     expires_at: expires, 
                     reason: reason || 'No reason provided' 
                 }]);
+                
+                if (error) {
+                    alert(`Database Error (${type}): ${error.message}`);
+                    console.error("Punish insert error:", error);
+                }
+
                 if(roomChannel) roomChannel.send({ type: 'broadcast', event: 'punish', payload: { id, name, type, reason, expires } });
                 fetchPunishments(); updatePlayerUI();
             }
@@ -1002,8 +1017,13 @@
 
         window.unpunishUser = async (id, name, type) => {
             const table = type === 'ban' ? 'banned_users' : 'muted_users';
-            await db.from(table).delete().eq('room_id', currentRoomId).or(`user_id.eq.${id},user_name.ilike.${name}`); 
+            const { error } = await db.from(table).delete().eq('room_id', currentRoomId).or(`user_id.eq.${id},user_name.ilike.${name}`); 
             
+            if (error) {
+                alert(`Database Error (unpunish): ${error.message}`);
+                console.error("Unpunish error:", error);
+            }
+
             if(roomChannel) {
                 roomChannel.send({ 
                     type: 'broadcast', 
@@ -1029,21 +1049,38 @@
         }
 
         async function fetchPunishments() {
-            const c = document.getElementById('bannedListContainer'); c.innerHTML = 'Loading...';
-            const { data: bData } = await db.from('banned_users').select('*').eq('room_id', currentRoomId);
-            const { data: mData } = await db.from('muted_users').select('*').eq('room_id', currentRoomId);
-            c.innerHTML = '';
+            const c = document.getElementById('bannedListContainer'); 
+            if (!c) return;
+            c.innerHTML = 'Loading...';
             
-            const renderRow = (d, type) => {
-                const exp = d.expires_at ? new Date(d.expires_at).toLocaleTimeString() : 'Perm';
-                const rText = d.reason ? ` - "${d.reason}"` : '';
-                c.innerHTML += `<div style="display:flex; justify-content:space-between; margin-bottom:4px; color:white;">
-                    <span style="font-size:12px;">[${type.toUpperCase()}] ${d.user_name} (${exp})${rText}</span>
-                    <button class="secondary-btn icon-btn" onclick="unpunishUser('${d.user_id}', '${d.user_name}', '${type}')">Undo</button>
-                </div>`;
-            };
-            (bData || []).forEach(d => renderRow(d, 'ban')); (mData || []).forEach(d => renderRow(d, 'mute'));
-            if(c.innerHTML === '') c.innerHTML = '<span style="color:#888">No punishments.</span>';
+            try {
+                const { data: bData, error: bErr } = await db.from('banned_users').select('*').eq('room_id', currentRoomId);
+                const { data: mData, error: mErr } = await db.from('muted_users').select('*').eq('room_id', currentRoomId);
+                
+                if (bErr) console.error("Error fetching banned users:", bErr);
+                if (mErr) console.error("Error fetching muted users:", mErr);
+
+                c.innerHTML = '';
+                
+                const renderRow = (d, type) => {
+                    const exp = d.expires_at ? new Date(d.expires_at).toLocaleTimeString() : 'Perm';
+                    const rText = d.reason ? ` - "${d.reason}"` : '';
+                    c.innerHTML += `<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px; color:white;">
+                        <span style="font-size:12px;">[${type.toUpperCase()}] ${d.user_name || 'Unknown'} (${exp})${rText}</span>
+                        <button class="secondary-btn icon-btn" onclick="unpunishUser('${d.user_id}', '${d.user_name}', '${type}')">Undo</button>
+                    </div>`;
+                };
+
+                (bData || []).forEach(d => renderRow(d, 'ban')); 
+                (mData || []).forEach(d => renderRow(d, 'mute'));
+
+                if (c.innerHTML === '') {
+                    c.innerHTML = '<span style="color:#888">No active punishments.</span>';
+                }
+            } catch (err) {
+                console.error("fetchPunishments catch error:", err);
+                c.innerHTML = '<span style="color:#f44336">Failed to load punishment list.</span>';
+            }
         }
     </script>
 </body>
