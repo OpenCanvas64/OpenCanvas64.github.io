@@ -11,17 +11,14 @@
         #lobbyView { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: #1e1e1e; z-index: 2000; display: flex; flex-direction: column; align-items: center; padding-top: 40px; color: white; overflow-y: auto; }
         .lobby-container { width: 100%; max-width: 950px; background: #2a2a2a; padding: 24px; border-radius: 12px; box-shadow: 0 8px 32px rgba(0,0,0,0.5); display: flex; flex-direction: column; gap: 20px; margin-bottom: 40px; }
         .lobby-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #444; padding-bottom: 16px; flex-wrap: wrap; gap: 10px; }
-        
         .lobby-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
         .section-box { background: #333; padding: 16px; border-radius: 8px; display: flex; flex-direction: column; gap: 10px; max-height: 350px; overflow-y: auto; }
         .section-box h3 { margin: 0 0 10px 0; font-size: 16px; color: #4CAF50; display: flex; justify-content: space-between; align-items: center; }
-        
         .dev-box { background: #3a1c3d; border: 1px solid #9c27b0; }
         .dev-box h3 { color: #e1bee7; }
-
         .room-row { display: flex; justify-content: space-between; align-items: center; background: #222; padding: 10px 14px; border-radius: 6px; transition: background 0.2s; margin-bottom: 6px; }
         .room-row:hover { background: #444; }
-        .room-details { display: flex; flex-direction: column; gap: 2px; }
+        .room-details { display: flex; flex-direction: column; gap: 2px; flex: 1; }
         .room-title { font-size: 15px; font-weight: bold; color: #fff; }
         .room-meta { font-size: 11px; color: #aaa; }
 
@@ -48,12 +45,19 @@
         .cursor-name { position: absolute; top: -24px; left: -10px; background: rgba(0,0,0,0.8); color: white; padding: 2px 6px; border-radius: 4px; font-size: 11px; white-space: nowrap; }
 
         .modal-overlay { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.85); display: flex; justify-content: center; align-items: center; z-index: 3000; }
-        .modal-box { background: #2a2a2a; padding: 24px; border-radius: 12px; display: flex; flex-direction: column; gap: 14px; width: 380px; color: white; box-shadow: 0 8px 32px rgba(0,0,0,0.6); max-height: 90vh; overflow-y: auto; }
+        .modal-box { background: #2a2a2a; padding: 24px; border-radius: 12px; display: flex; flex-direction: column; gap: 14px; width: 420px; color: white; box-shadow: 0 8px 32px rgba(0,0,0,0.6); max-height: 90vh; overflow-y: auto; }
         .modal-box h2, .modal-box h3, .modal-box h4 { margin: 0; text-align: center; color: #fff; }
         .modal-box label { font-size: 13px; color: #ccc; font-weight: bold; }
         .hidden { display: none !important; }
         #banOverlay { background: rgba(180, 0, 0, 0.95); color: white; z-index: 9999; text-align: center; }
         .admin-section { background: #333; padding: 12px; border-radius: 6px; display: flex; flex-direction: column; gap: 8px; }
+        
+        /* CHAT STYLES */
+        #chatContainer { position: fixed; bottom: 20px; left: 20px; width: 320px; height: 280px; background: rgba(0,0,0,0.7); border-radius: 8px; display: flex; flex-direction: column; z-index: 1000; box-shadow: 0 4px 12px rgba(0,0,0,0.5); border: 1px solid #444; }
+        #chatMessages { flex: 1; overflow-y: auto; padding: 10px; color: white; font-size: 13px; display: flex; flex-direction: column; gap: 4px; word-wrap: break-word; }
+        .chat-line { line-height: 1.4; }
+        .chat-sys { color: #ff9800; font-style: italic; }
+        #chatInput { background: rgba(0,0,0,0.5); border: none; border-top: 1px solid #555; padding: 10px; color: white; outline: none; border-radius: 0 0 8px 8px; font-family: sans-serif; }
     </style>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
@@ -82,7 +86,7 @@
             </div>
 
             <div id="devSection" class="section-box dev-box hidden" style="grid-column: span 2;">
-                <h3>🛠️ Developer God-Mode: All Active Servers</h3>
+                <h3>🛠️ Developer Mode: All Active Servers</h3>
                 <div id="devRoomsList">Loading...</div>
             </div>
 
@@ -91,12 +95,10 @@
                     <h3>🌐 Public Servers <button id="refreshPublicBtn" class="icon-btn secondary-btn">🔄 Refresh</button></h3>
                     <div id="publicRoomsList">Loading...</div>
                 </div>
-
                 <div class="section-box">
                     <h3>👑 My Created Servers</h3>
                     <div id="myCreatedRoomsList">Loading...</div>
                 </div>
-
                 <div class="section-box">
                     <h3>🕒 Recent Private Rooms</h3>
                     <div id="recentRoomsList">Loading...</div>
@@ -108,27 +110,15 @@
     <div id="createRoomModal" class="modal-overlay hidden">
         <div class="modal-box">
             <h2>➕ Create Room</h2>
-            <label>Room Name:</label>
-            <input type="text" id="newRoomName" placeholder="e.g. Pixel Artists Hangout">
-            <label>Custom Join Code (Optional, for private):</label>
-            <input type="text" id="newRoomCode" placeholder="Leave blank for random...">
+            <label>Room Name:</label><input type="text" id="newRoomName" placeholder="e.g. Pixel Artists Hangout">
+            <label>Custom Join Code (Optional):</label><input type="text" id="newRoomCode" placeholder="Leave blank for random...">
             <div style="display: flex; gap: 12px;">
-                <div style="flex: 1; display: flex; flex-direction: column; gap: 4px;">
-                    <label>Width (px):</label>
-                    <input type="number" id="newRoomWidth" value="1280">
-                </div>
-                <div style="flex: 1; display: flex; flex-direction: column; gap: 4px;">
-                    <label>Height (px):</label>
-                    <input type="number" id="newRoomHeight" value="720">
-                </div>
+                <div style="flex: 1;"><label>Width (px):</label><input type="number" id="newRoomWidth" value="1280" style="width:100%"></div>
+                <div style="flex: 1;"><label>Height (px):</label><input type="number" id="newRoomHeight" value="720" style="width:100%"></div>
             </div>
             <label>Visibility:</label>
-            <select id="newRoomVisibility">
-                <option value="public">🌐 Public (Listed)</option>
-                <option value="private">🔒 Private (Hidden, Join Code Only)</option>
-            </select>
-            <label>Admin Password:</label>
-            <input type="password" id="newRoomAdminPass" placeholder="Set a secret password...">
+            <select id="newRoomVisibility"><option value="public">🌐 Public</option><option value="private">🔒 Private (Code Only)</option></select>
+            <label>Admin Password:</label><input type="password" id="newRoomAdminPass" placeholder="Set a secret password...">
             <div style="display: flex; gap: 8px; margin-top: 10px;">
                 <button id="cancelCreateRoomBtn" style="background: #666; flex: 1;">Cancel</button>
                 <button id="submitCreateRoomBtn" style="flex: 2;">Create & Join</button>
@@ -142,34 +132,20 @@
             <div style="width: 1px; height: 24px; background: #666; margin: 0 4px;"></div>
             <div class="tool-group"><input type="color" id="colorPicker" value="#000000"></div>
             <div class="tool-group">
-                <select id="toolPicker">
-                    <option value="pencil">Pencil</option>
-                    <option value="square">Square</option>
-                    <option value="circle">Circle</option>
-                    <option value="text">Text</option>
-                </select>
+                <select id="toolPicker"><option value="pencil">Pencil</option><option value="square">Square</option><option value="circle">Circle</option><option value="text">Text</option></select>
             </div>
-            <div class="tool-group" id="pencilSizeGroup">
-                <select id="pencilSizePicker">
-                    <option value="2">2px</option>
-                    <option value="5" selected>5px</option>
-                    <option value="10">10px</option>
-                    <option value="20">20px</option>
-                    <option value="40">40px</option>
-                </select>
-            </div>
-            <div class="tool-group hidden" id="textSizeGroup">
-                <select id="textSizePicker">
-                    <option value="12">12px</option>
-                    <option value="20" selected>20px</option>
-                    <option value="36">36px</option>
-                    <option value="72">72px</option>
-                </select>
-            </div>
+            <div class="tool-group" id="pencilSizeGroup"><select id="pencilSizePicker"><option value="2">2px</option><option value="5" selected>5px</option><option value="10">10px</option><option value="20">20px</option><option value="40">40px</option></select></div>
+            <div class="tool-group hidden" id="textSizeGroup"><select id="textSizePicker"><option value="12">12px</option><option value="20" selected>20px</option><option value="36">36px</option><option value="72">72px</option></select></div>
             <div style="width: 1px; height: 24px; background: #666; margin: 0 4px;"></div>
             <button id="openAdminBtn" class="admin-btn">Admin Menu</button>
             <div class="tool-group" id="statusText" style="color: #ffaa00; margin-left: 8px; font-size: 12px; font-weight: bold;">Connecting...</div>
         </div>
+        
+        <div id="chatContainer">
+            <div id="chatMessages"></div>
+            <input type="text" id="chatInput" placeholder="Type here or /help...">
+        </div>
+
         <div class="canvas-wrapper" id="canvasWrapper">
             <canvas id="drawingCanvas"></canvas>
             <canvas id="previewCanvas"></canvas>
@@ -195,7 +171,7 @@
                 <button id="submitAdminLoginBtn" class="admin-btn">Login</button>
             </div>
         </div>
-        <div id="adminDashboardBox" class="modal-box hidden" style="width: 440px;">
+        <div id="adminDashboardBox" class="modal-box hidden">
             <h3>🛠️ Room Admin Panel</h3>
             <div class="admin-section">
                 <h4>🎨 Quick Actions</h4>
@@ -208,27 +184,22 @@
             <div class="admin-section">
                 <h4>⚙️ Edit Room Settings</h4>
                 <div style="display: flex; flex-direction: column; gap: 6px;">
-                    <label>Room Name:</label>
-                    <input type="text" id="editRoomName">
-                    <label>Join Code (For Private Access):</label>
-                    <input type="text" id="editRoomCode">
-                    <div style="display: flex; gap: 8px;">
-                        <div style="flex: 1;"><label>Width (px):</label><input type="number" id="editRoomWidth" style="width: 100%;"></div>
-                        <div style="flex: 1;"><label>Height (px):</label><input type="number" id="editRoomHeight" style="width: 100%;"></div>
-                    </div>
-                    <label>Visibility:</label>
-                    <select id="editRoomVisibility">
-                        <option value="public">🌐 Public (Listed)</option>
-                        <option value="private">🔒 Private (Hidden, Code Only)</option>
-                    </select>
-                    <button id="saveRoomSettingsBtn" class="admin-btn" style="margin-top: 6px;">Save & Broadcast Changes</button>
+                    <label>Room Name:</label><input type="text" id="editRoomName">
+                    <label>Join Code:</label><input type="text" id="editRoomCode">
+                    <div style="display: flex; gap: 8px;"><div style="flex: 1;"><label>Width:</label><input type="number" id="editRoomWidth" style="width: 100%;"></div><div style="flex: 1;"><label>Height:</label><input type="number" id="editRoomHeight" style="width: 100%;"></div></div>
+                    <label>Visibility:</label><select id="editRoomVisibility"><option value="public">🌐 Public</option><option value="private">🔒 Private</option></select>
+                    <button id="saveRoomSettingsBtn" class="admin-btn" style="margin-top: 6px;">Save Changes</button>
                 </div>
             </div>
             <div class="admin-section">
                 <h4>👥 Player Management</h4>
+                <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+                    <label>Punishment Duration (Mins):</label>
+                    <input type="number" id="punishDuration" placeholder="Leave blank for perm" style="width: 130px;">
+                </div>
                 <label>Connected Players:</label>
                 <div id="playerListContainer" style="max-height: 100px; overflow-y: auto; background: #222; padding: 6px; border-radius: 4px;"></div>
-                <label style="margin-top: 10px;">Banned Players (This Room):</label>
+                <label style="margin-top: 10px;">Banned / Muted Players:</label>
                 <div id="bannedListContainer" style="max-height: 100px; overflow-y: auto; background: #222; padding: 6px; border-radius: 4px;"></div>
             </div>
             <button id="closeAdminDashBtn" style="background: #666; margin-top: 4px;">Close Admin Panel</button>
@@ -244,144 +215,105 @@
         localStorage.setItem('canvas_my_id', myId);
         let isDev = localStorage.getItem('canvas_is_dev') === 'true';
         
-        let currentRoomId = null;
-        let currentRoomData = null;
-        let roomChannel = null;
+        let currentRoomId = null, currentRoomData = null, roomChannel = null;
         let activePlayers = {}; 
-        let isBanned = false;
+        let isBanned = false, isMuted = false;
         
         let recentRooms = JSON.parse(localStorage.getItem('canvas_recent_rooms') || '[]');
 
-        const lobbyView = document.getElementById('lobbyView');
-        const mainAppView = document.getElementById('mainAppView');
+        const lobbyView = document.getElementById('lobbyView'), mainAppView = document.getElementById('mainAppView');
         const globalNameInput = document.getElementById('globalNameInput');
-        const devPasswordInput = document.getElementById('devPasswordInput');
-        
-        const canvasWrapper = document.getElementById('canvasWrapper');
-        const drawingCanvas = document.getElementById('drawingCanvas');
-        const dCtx = drawingCanvas.getContext('2d');
-        const previewCanvas = document.getElementById('previewCanvas');
-        const pCtx = previewCanvas.getContext('2d');
-        const inlineTextInput = document.getElementById('inlineTextInput');
-        const cursorsContainer = document.getElementById('cursorsContainer');
-        const colorPicker = document.getElementById('colorPicker');
-
         globalNameInput.value = localStorage.getItem('canvas_user_name') || "Anonymous";
         globalNameInput.addEventListener('input', (e) => localStorage.setItem('canvas_user_name', e.target.value.trim()));
 
-        // --- DEVELOPER LOGIN ---
+        const drawingCanvas = document.getElementById('drawingCanvas'), dCtx = drawingCanvas.getContext('2d');
+        const previewCanvas = document.getElementById('previewCanvas'), pCtx = previewCanvas.getContext('2d');
+        const chatMessages = document.getElementById('chatMessages');
+
+        function appendChat(msg, type = 'normal') {
+            const el = document.createElement('div');
+            el.className = `chat-line ${type === 'system' ? 'chat-sys' : ''}`;
+            el.innerText = msg;
+            chatMessages.appendChild(el);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+
+        // --- DEV LOGIN ---
         document.getElementById('devLoginBtn').addEventListener('click', async () => {
-            const enteredName = globalNameInput.value.trim();
-            const enteredPass = devPasswordInput.value;
-
-            if (!enteredPass) return alert("Enter a Dev Password.");
-
-            const { data, error } = await db.from('developers')
-                .select('*')
-                .eq('dev_username', enteredName)
-                .eq('dev_password', enteredPass);
-
+            const name = globalNameInput.value.trim(), pass = document.getElementById('devPasswordInput').value;
+            if (!pass) return alert("Enter a Dev Password.");
+            const { data } = await db.from('developers').select('*').eq('dev_username', name).eq('dev_password', pass);
             if (data && data.length > 0) {
-                isDev = true;
-                localStorage.setItem('canvas_is_dev', 'true');
-                alert("🔓 Developer Mode Unlocked!");
-                devPasswordInput.value = '';
-                fetchLobbyData();
-            } else {
-                alert("❌ Invalid Developer Credentials.");
-            }
+                isDev = true; localStorage.setItem('canvas_is_dev', 'true');
+                alert("🔓 Developer Mode Unlocked!"); document.getElementById('devPasswordInput').value = ''; fetchLobbyData();
+            } else alert("❌ Invalid Developer Credentials.");
         });
+
+        window.deleteRoom = async (roomId) => {
+            if(!confirm("Are you sure you want to permanently delete this room?")) return;
+            await db.from('rooms').delete().eq('room_id', roomId);
+            // Broadcast delete event if active
+            const tempChan = db.channel(`room_${roomId}`);
+            tempChan.subscribe((status) => {
+                if(status === 'SUBSCRIBED') {
+                    tempChan.send({ type: 'broadcast', event: 'room_deleted' });
+                    db.removeChannel(tempChan);
+                    setTimeout(fetchLobbyData, 500);
+                }
+            });
+        };
 
         // --- LOBBY LOGIC ---
         async function fetchLobbyData() {
-            // Dev Mode Check
             if (isDev) {
                 document.getElementById('devSection').classList.remove('hidden');
-                document.getElementById('devRoomsList').innerHTML = 'Loading...';
                 const { data: allRooms } = await db.from('rooms').select('*').order('created_at', { ascending: false });
-                if (allRooms) {
-                    document.getElementById('devRoomsList').innerHTML = allRooms.map(room => `
-                        <div class="room-row">
-                            <div class="room-details">
-                                <span class="room-title">${room.room_name} ${room.is_public ? '🌐' : '🔒'}</span>
-                                <span class="room-meta">ID: ${room.room_id} | Code: ${room.room_code || 'N/A'} | Pass: ${room.admin_password}</span>
-                            </div>
-                            <button class="dev-btn" onclick="joinRoomById('${room.room_id}')">Dev Join</button>
-                        </div>`).join('');
-                }
-            }
-
-            // 1. Fetch Public Rooms
-            document.getElementById('publicRoomsList').innerHTML = 'Loading...';
-            const { data: pubData, error: pubErr } = await db.from('rooms').select('*').eq('is_public', true).order('created_at', { ascending: false });
-            if (pubErr) document.getElementById('publicRoomsList').innerHTML = `<div style="color:red;">Error: ${pubErr.message}</div>`;
-            else if (!pubData.length) document.getElementById('publicRoomsList').innerHTML = '<div style="color:#888; text-align:center;">No public servers.</div>';
-            else {
-                document.getElementById('publicRoomsList').innerHTML = pubData.map(room => `
+                document.getElementById('devRoomsList').innerHTML = (allRooms||[]).map(room => `
                     <div class="room-row">
-                        <div class="room-details">
-                            <span class="room-title">${room.room_name}</span>
-                            <span class="room-meta">Size: ${room.width}x${room.height}</span>
+                        <div class="room-details"><span class="room-title">${room.room_name}</span><span class="room-meta">ID: ${room.room_id} | Pass: ${room.admin_password}</span></div>
+                        <div style="display:flex; gap:6px;">
+                            <button class="danger-btn icon-btn" onclick="deleteRoom('${room.room_id}')">🗑️</button>
+                            <button class="dev-btn icon-btn" onclick="joinRoomById('${room.room_id}')">Join</button>
                         </div>
-                        <button class="secondary-btn" onclick="joinRoomById('${room.room_id}')">Join</button>
                     </div>`).join('');
             }
 
-            // 2. Fetch My Created Rooms
+            const { data: pubData } = await db.from('rooms').select('*').eq('is_public', true).order('created_at', { ascending: false });
+            document.getElementById('publicRoomsList').innerHTML = (pubData||[]).map(room => `
+                <div class="room-row">
+                    <div class="room-details"><span class="room-title">${room.room_name}</span><span class="room-meta">Size: ${room.width}x${room.height}</span></div>
+                    <div style="display:flex; gap:6px;">
+                        ${(room.creator_id === myId || isDev) ? `<button class="danger-btn icon-btn" onclick="deleteRoom('${room.room_id}')">🗑️</button>` : ''}
+                        <button class="secondary-btn" onclick="joinRoomById('${room.room_id}')">Join</button>
+                    </div>
+                </div>`).join('');
+
             const { data: myData } = await db.from('rooms').select('*').eq('creator_id', myId).order('created_at', { ascending: false });
-            if (!myData || !myData.length) document.getElementById('myCreatedRoomsList').innerHTML = '<div style="color:#888; text-align:center;">None created.</div>';
-            else {
-                document.getElementById('myCreatedRoomsList').innerHTML = myData.map(room => `
-                    <div class="room-row">
-                        <div class="room-details">
-                            <span class="room-title">${room.room_name}</span>
-                            <span class="room-meta">${room.is_public ? '🌐 Public' : '🔒 Private'} | Code: ${room.room_code || 'N/A'}</span>
-                        </div>
+            document.getElementById('myCreatedRoomsList').innerHTML = (myData||[]).map(room => `
+                <div class="room-row">
+                    <div class="room-details"><span class="room-title">${room.room_name}</span><span class="room-meta">${room.is_public ? '🌐 Public' : '🔒 Private'} | Code: ${room.room_code || 'N/A'}</span></div>
+                    <div style="display:flex; gap:6px;">
+                        <button class="danger-btn icon-btn" onclick="deleteRoom('${room.room_id}')">🗑️</button>
                         <button class="secondary-btn" onclick="joinRoomById('${room.room_id}')">Join</button>
-                    </div>`).join('');
-            }
-
-            // 3. Render Recent Private Rooms
-            if (!recentRooms.length) document.getElementById('recentRoomsList').innerHTML = '<div style="color:#888; text-align:center;">No recent rooms.</div>';
-            else {
-                document.getElementById('recentRoomsList').innerHTML = recentRooms.map(room => `
-                    <div class="room-row">
-                        <div class="room-details">
-                            <span class="room-title">${room.name}</span>
-                            <span class="room-meta">Code: ${room.code}</span>
-                        </div>
-                        <button class="secondary-btn" onclick="joinRoomByCode('${room.code}')">Rejoin</button>
-                    </div>`).join('');
-            }
+                    </div>
+                </div>`).join('');
         }
-        
-        fetchLobbyData();
-        document.getElementById('refreshPublicBtn').addEventListener('click', fetchLobbyData);
+        fetchLobbyData(); document.getElementById('refreshPublicBtn').addEventListener('click', fetchLobbyData);
 
-        // --- ROOM CREATION ---
-        const createRoomModal = document.getElementById('createRoomModal');
-        document.getElementById('openCreateRoomBtn').addEventListener('click', () => createRoomModal.classList.remove('hidden'));
-        document.getElementById('cancelCreateRoomBtn').addEventListener('click', () => createRoomModal.classList.add('hidden'));
+        // --- ROOM CREATION & JOINING ---
+        document.getElementById('openCreateRoomBtn').addEventListener('click', () => document.getElementById('createRoomModal').classList.remove('hidden'));
+        document.getElementById('cancelCreateRoomBtn').addEventListener('click', () => document.getElementById('createRoomModal').classList.add('hidden'));
 
         document.getElementById('submitCreateRoomBtn').addEventListener('click', async () => {
             const name = document.getElementById('newRoomName').value.trim() || "Untitled Room";
             let code = document.getElementById('newRoomCode').value.trim() || ("join-" + Math.random().toString(36).substr(2, 6));
-            const w = parseInt(document.getElementById('newRoomWidth').value) || 1280;
-            const h = parseInt(document.getElementById('newRoomHeight').value) || 720;
-            const isPublic = document.getElementById('newRoomVisibility').value === 'public';
-            const adminPass = document.getElementById('newRoomAdminPass').value || "1234";
             const roomId = "srv-" + Math.random().toString(36).substr(2, 9);
-
             const { error } = await db.from('rooms').insert([{ 
-                room_id: roomId, room_code: code, room_name: name, width: w, height: h, is_public: isPublic, admin_password: adminPass, creator_id: myId 
+                room_id: roomId, room_code: code, room_name: name, width: parseInt(document.getElementById('newRoomWidth').value) || 1280, 
+                height: parseInt(document.getElementById('newRoomHeight').value) || 720, is_public: document.getElementById('newRoomVisibility').value === 'public', 
+                admin_password: document.getElementById('newRoomAdminPass').value || "1234", creator_id: myId 
             }]);
-
-            if (error) { alert("Failed to create room: " + error.message); } 
-            else { 
-                localStorage.setItem(`admin_${roomId}`, 'true');
-                createRoomModal.classList.add('hidden'); 
-                joinRoomById(roomId); 
-            }
+            if (!error) { localStorage.setItem(`admin_${roomId}`, 'true'); document.getElementById('createRoomModal').classList.add('hidden'); joinRoomById(roomId); }
         });
 
         document.getElementById('joinPrivateBtn').addEventListener('click', () => {
@@ -390,47 +322,44 @@
         });
         document.getElementById('leaveRoomBtn').addEventListener('click', () => location.reload());
 
-        // --- JOIN LOGIC ---
-        window.joinRoomByCode = async (code) => {
-            const { data, error } = await db.from('rooms').select('*').eq('room_code', code).limit(1);
-            if (error || !data.length) { alert("Invalid Room Code!"); return; }
-            addToRecent(data[0]);
-            connectToRoom(data[0]);
-        };
+        window.joinRoomByCode = async (code) => { const { data } = await db.from('rooms').select('*').eq('room_code', code).limit(1); if (data.length) connectToRoom(data[0]); };
+        window.joinRoomById = async (id) => { const { data } = await db.from('rooms').select('*').eq('room_id', id).limit(1); if (data.length) connectToRoom(data[0]); };
 
-        window.joinRoomById = async (id) => {
-            const { data, error } = await db.from('rooms').select('*').eq('room_id', id).limit(1);
-            if (error || !data.length) { alert("Room not found!"); return; }
-            if(!data[0].is_public) addToRecent(data[0]);
-            connectToRoom(data[0]);
-        };
+        async function checkPunishments(roomId, myName) {
+            if (isDev) return { banned: false, muted: false };
+            const now = new Date().toISOString();
+            
+            // Clean up expired punishments before checking
+            await db.from('banned_users').delete().lt('expires_at', now);
+            await db.from('muted_users').delete().lt('expires_at', now);
 
-        function addToRecent(roomData) {
-            if(roomData.is_public) return;
-            recentRooms = recentRooms.filter(r => r.id !== roomData.room_id);
-            recentRooms.unshift({ id: roomData.room_id, name: roomData.room_name, code: roomData.room_code });
-            if(recentRooms.length > 5) recentRooms.pop();
-            localStorage.setItem('canvas_recent_rooms', JSON.stringify(recentRooms));
+            const { data: banData } = await db.from('banned_users').select('*').eq('room_id', roomId).or(`user_id.eq.${myId},user_name.ilike.${myName}`);
+            const { data: muteData } = await db.from('muted_users').select('*').eq('room_id', roomId).or(`user_id.eq.${myId},user_name.ilike.${myName}`);
+            
+            return { banned: banData.length > 0, muted: muteData.length > 0 };
         }
 
         async function connectToRoom(roomData) {
             const myName = globalNameInput.value.trim() || "Anonymous";
             currentRoomData = roomData; currentRoomId = roomData.room_id;
 
-            // Check Ban Status (Devs bypass bans)
-            if (!isDev) {
-                const { data: banData } = await db.from('banned_users').select('*').eq('room_id', currentRoomId).or(`user_id.eq.${myId},user_name.ilike.${myName}`);
-                if (banData && banData.length > 0) { document.getElementById('banOverlay').classList.remove('hidden'); return; }
-            }
+            const pun = await checkPunishments(currentRoomId, myName);
+            if (pun.banned) return document.getElementById('banOverlay').classList.remove('hidden');
+            isMuted = pun.muted;
 
-            resizeCanvasLogic(currentRoomData.width, currentRoomData.height);
+            drawingCanvas.width = roomData.width; drawingCanvas.height = roomData.height; previewCanvas.width = roomData.width; previewCanvas.height = roomData.height;
+            document.getElementById('canvasWrapper').style.width = `${roomData.width}px`; document.getElementById('canvasWrapper').style.height = `${roomData.height}px`;
+            dCtx.lineCap = 'round'; pCtx.lineCap = 'round';
+
             lobbyView.classList.add('hidden'); mainAppView.classList.remove('hidden');
-            
-            // Highlight Dev Mode in the UI if active
-            document.getElementById('statusText').innerText = isDev ? `🛠️ Dev God-Mode: ${currentRoomData.room_name}` : `Room: ${currentRoomData.room_name}`;
+            document.getElementById('statusText').innerText = isDev ? `🛠️ Dev View: ${roomData.room_name}` : `Room: ${roomData.room_name}`;
             if (isDev) document.getElementById('openAdminBtn').classList.add('dev-btn');
 
-            loadSavedCanvas();
+            const { data: art } = await db.from('whiteboard').select('image_data').eq('room_id', currentRoomId).order('id', { ascending: false }).limit(1);
+            if (art && art.length) { const img = new Image(); img.onload = () => dCtx.drawImage(img, 0, 0); img.src = art[0].image_data; }
+
+            appendChat(`Welcome to ${roomData.room_name}. Type /help for commands.`, 'system');
+            if (isMuted) appendChat("You are currently muted in this room.", 'system');
 
             roomChannel = db.channel(`room_${currentRoomId}`);
             
@@ -444,250 +373,198 @@
             });
 
             roomChannel.on('broadcast', { event: 'cursor' }, (p) => {
-                const d = p.payload; activePlayers[d.id] = { name: d.name, lastSeen: Date.now() }; updatePlayerUI();
+                const d = p.payload; 
+                // Calculate Ping based on timestamp attached to cursor
+                const ping = Date.now() - d.ts;
+                activePlayers[d.id] = { name: d.name, lastSeen: Date.now(), ping: ping > 0 ? ping : 1 }; 
+                
                 if (d.id === myId) return;
                 let c = document.getElementById(`cursor-${d.id}`);
                 if (!c) {
                     c = document.createElement('div'); c.id = `cursor-${d.id}`; c.className = 'remote-cursor';
                     c.innerHTML = `<div class="cursor-name">${d.name}</div><div class="cursor-pointer" style="background-color: ${d.color}"></div>`;
-                    cursorsContainer.appendChild(c);
+                    document.getElementById('cursorsContainer').appendChild(c);
                 } else { c.querySelector('.cursor-name').innerText = d.name; }
                 c.style.left = `${d.x}px`; c.style.top = `${d.y}px`;
             });
 
-            roomChannel.on('broadcast', { event: 'clear' }, () => dCtx.clearRect(0, 0, drawingCanvas.width, drawingCanvas.height));
-            roomChannel.on('broadcast', { event: 'fill' }, (p) => { dCtx.fillStyle = p.payload.c; dCtx.fillRect(0, 0, drawingCanvas.width, drawingCanvas.height); });
-            
-            roomChannel.on('broadcast', { event: 'ban' }, (p) => {
-                const { id, name } = p.payload;
-                delete activePlayers[id];
-                if ((id === myId || (name && name.toLowerCase() === myName.toLowerCase())) && !isDev) {
-                    isBanned = true; 
-                    if (roomChannel) { db.removeChannel(roomChannel); roomChannel = null; } 
-                    document.getElementById('banOverlay').classList.remove('hidden');
-                }
+            roomChannel.on('broadcast', { event: 'chat' }, (p) => {
+                appendChat(`[${p.payload.name}]: ${p.payload.msg}`);
             });
 
-            roomChannel.on('broadcast', { event: 'settings_updated' }, (p) => {
-                const { name, code, w, h } = p.payload;
-                currentRoomData.room_name = name; currentRoomData.room_code = code;
-                document.getElementById('statusText').innerText = isDev ? `🛠️ Dev God-Mode: ${name}` : `Room: ${name}`;
-                resizeCanvasLogic(w, h, true);
+            roomChannel.on('broadcast', { event: 'clear' }, () => dCtx.clearRect(0, 0, drawingCanvas.width, drawingCanvas.height));
+            roomChannel.on('broadcast', { event: 'fill' }, (p) => { dCtx.fillStyle = p.payload.c; dCtx.fillRect(0, 0, drawingCanvas.width, drawingCanvas.height); });
+            roomChannel.on('broadcast', { event: 'room_deleted' }, () => { alert("Room was deleted."); location.reload(); });
+            
+            roomChannel.on('broadcast', { event: 'punish' }, (p) => {
+                const { id, type } = p.payload;
+                if (id === myId && !isDev) {
+                    if (type === 'ban') { isBanned = true; db.removeChannel(roomChannel); document.getElementById('banOverlay').classList.remove('hidden'); }
+                    if (type === 'mute') { isMuted = true; appendChat("You have been muted by an Admin.", 'system'); }
+                    if (type === 'unmute') { isMuted = false; appendChat("You have been unmuted.", 'system'); }
+                }
             });
 
             roomChannel.subscribe();
 
             window.addEventListener('mousemove', (e) => {
                 if ((isBanned && !isDev) || !roomChannel) return;
-                const pos = getMousePos(e);
-                roomChannel.send({ type: 'broadcast', event: 'cursor', payload: { id: myId, name: myName, x: pos.x, y: pos.y, color: colorPicker.value } });
+                const rect = previewCanvas.getBoundingClientRect();
+                const x = (e.clientX - rect.left) * (previewCanvas.width / rect.width), y = (e.clientY - rect.top) * (previewCanvas.height / rect.height);
+                roomChannel.send({ type: 'broadcast', event: 'cursor', payload: { id: myId, name: myName, x, y, color: document.getElementById('colorPicker').value, ts: Date.now() } });
             });
         }
 
-        function resizeCanvasLogic(w, h, keepArt = false) {
-            let temp;
-            if (keepArt) temp = dCtx.getImageData(0, 0, drawingCanvas.width, drawingCanvas.height);
-            drawingCanvas.width = w; drawingCanvas.height = h; previewCanvas.width = w; previewCanvas.height = h;
-            canvasWrapper.style.width = `${w}px`; canvasWrapper.style.height = `${h}px`;
-            dCtx.lineCap = 'round'; pCtx.lineCap = 'round';
-            if (keepArt && temp) dCtx.putImageData(temp, 0, 0);
-        }
+        // --- CHAT INPUT LOGIC ---
+        document.getElementById('chatInput').addEventListener('keydown', (e) => {
+            if (e.key !== 'Enter') return;
+            const msg = e.target.value.trim();
+            if (!msg) return;
+            e.target.value = '';
 
-        async function loadSavedCanvas() {
-            const { data } = await db.from('whiteboard').select('image_data').eq('room_id', currentRoomId).order('id', { ascending: false }).limit(1);
-            if (data && data.length > 0) {
-                const img = new Image(); img.onload = () => { if (!isBanned || isDev) dCtx.drawImage(img, 0, 0); }; img.src = data[0].image_data;
+            if (msg.startsWith('/')) {
+                const cmd = msg.split(' ')[0].toLowerCase();
+                if (cmd === '/help') {
+                    appendChat("Commands: /help, /clear (Admin), /me <text>", 'system');
+                } else if (cmd === '/me') {
+                    if(!isMuted) roomChannel.send({ type: 'broadcast', event: 'chat', payload: { name: globalNameInput.value, msg: `*${msg.substring(4)}*` } });
+                } else if (cmd === '/clear') {
+                    if (isDev || localStorage.getItem(`admin_${currentRoomId}`) === 'true') {
+                        dCtx.clearRect(0, 0, drawingCanvas.width, drawingCanvas.height);
+                        roomChannel.send({ type: 'broadcast', event: 'clear' });
+                        appendChat("Canvas cleared.", 'system');
+                    } else appendChat("You do not have permission to use /clear.", 'system');
+                } else {
+                    appendChat("Unknown command.", 'system');
+                }
+                return;
             }
-        }
 
-        async function saveToCloud() {
-            if ((isBanned && !isDev) || !currentRoomId) return;
-            await db.from('whiteboard').insert([{ room_id: currentRoomId, image_data: drawingCanvas.toDataURL() }]);
-        }
-
-        function getMousePos(e) {
-            const rect = previewCanvas.getBoundingClientRect();
-            return { x: (e.clientX - rect.left) * (previewCanvas.width / rect.width), y: (e.clientY - rect.top) * (previewCanvas.height / rect.height) };
-        }
-
-        let isDrawing = false, startX = 0, startY = 0, lastX = 0, lastY = 0, activeTextCoords = null;
-        const toolPicker = document.getElementById('toolPicker');
-
-        toolPicker.addEventListener('change', () => {
-            commitInlineText();
-            document.getElementById('pencilSizeGroup').classList.toggle('hidden', toolPicker.value === 'text');
-            document.getElementById('textSizeGroup').classList.toggle('hidden', toolPicker.value !== 'text');
+            if (isMuted) return appendChat("You are muted and cannot speak.", 'system');
+            
+            // Send standard chat
+            roomChannel.send({ type: 'broadcast', event: 'chat', payload: { name: globalNameInput.value, msg } });
+            appendChat(`[${globalNameInput.value}]: ${msg}`);
         });
 
+        // --- DRAWING LOGIC (Compact) ---
+        let isDrawing = false, startX = 0, startY = 0, lastX = 0, lastY = 0;
+        function getMouse(e) { const r = previewCanvas.getBoundingClientRect(); return { x: (e.clientX - r.left) * (previewCanvas.width / r.width), y: (e.clientY - r.top) * (previewCanvas.height / r.height) }; }
+        
         previewCanvas.addEventListener('mousedown', (e) => {
             if (isBanned && !isDev) return;
-            const pos = getMousePos(e);
-            if (toolPicker.value === 'text') { spawnInlineText(pos.x, pos.y); return; }
-            commitInlineText(); isDrawing = true; startX = pos.x; startY = pos.y; lastX = pos.x; lastY = pos.y;
+            const pos = getMouse(e);
+            if (document.getElementById('toolPicker').value === 'text') {
+                const ti = document.getElementById('inlineTextInput'), sz = document.getElementById('textSizePicker').value;
+                ti.style.left = `${pos.x}px`; ti.style.top = `${pos.y - sz*0.8}px`; ti.style.fontSize = `${sz}px`; ti.style.color = document.getElementById('colorPicker').value;
+                ti.classList.remove('hidden'); ti.focus(); ti.dataset.x = pos.x; ti.dataset.y = pos.y; return;
+            }
+            isDrawing = true; startX = pos.x; startY = pos.y; lastX = pos.x; lastY = pos.y;
+        });
+
+        document.getElementById('inlineTextInput').addEventListener('keydown', (e) => {
+            if(e.key==='Enter') {
+                const ti = e.target, txt = ti.value.trim(), c = document.getElementById('colorPicker').value, sz = document.getElementById('textSizePicker').value;
+                if(txt) {
+                    dCtx.fillStyle = c; dCtx.font = `${sz}px Arial`; dCtx.fillText(txt, ti.dataset.x, ti.dataset.y);
+                    roomChannel.send({ type: 'broadcast', event: 'draw', payload: { tool: 'text', x0: ti.dataset.x, y0: ti.dataset.y, text: txt, color: c, size: sz }});
+                }
+                ti.value = ''; ti.classList.add('hidden');
+            }
         });
 
         previewCanvas.addEventListener('mousemove', (e) => {
-            if (isBanned && !isDev) return;
-            pCtx.clearRect(0, 0, previewCanvas.width, previewCanvas.height);
-            const pos = getMousePos(e);
+            if (isBanned && !isDev) return; pCtx.clearRect(0,0,previewCanvas.width,previewCanvas.height); const pos = getMouse(e), t = document.getElementById('toolPicker').value, c = document.getElementById('colorPicker').value;
             if (isDrawing) {
-                if (toolPicker.value === 'pencil') {
-                    const penSize = parseInt(document.getElementById('pencilSizePicker').value);
-                    dCtx.strokeStyle = colorPicker.value; dCtx.lineWidth = penSize;
-                    dCtx.beginPath(); dCtx.moveTo(lastX, lastY); dCtx.lineTo(pos.x, pos.y); dCtx.stroke();
-                    if(roomChannel) roomChannel.send({ type: 'broadcast', event: 'draw', payload: { tool: 'pencil', x0: lastX, y0: lastY, x1: pos.x, y1: pos.y, color: colorPicker.value, size: penSize }});
+                if (t === 'pencil') {
+                    const sz = document.getElementById('pencilSizePicker').value; dCtx.strokeStyle = c; dCtx.lineWidth = sz; dCtx.beginPath(); dCtx.moveTo(lastX, lastY); dCtx.lineTo(pos.x, pos.y); dCtx.stroke();
+                    roomChannel.send({ type: 'broadcast', event: 'draw', payload: { tool: 'pencil', x0: lastX, y0: lastY, x1: pos.x, y1: pos.y, color: c, size: sz }});
                     lastX = pos.x; lastY = pos.y;
-                } else if (toolPicker.value === 'square') {
-                    pCtx.strokeStyle = colorPicker.value; pCtx.fillStyle = colorPicker.value + "44"; pCtx.setLineDash([6, 6]);
-                    pCtx.fillRect(startX, startY, pos.x - startX, pos.y - startY); pCtx.strokeRect(startX, startY, pos.x - startX, pos.y - startY); pCtx.setLineDash([]);
-                } else if (toolPicker.value === 'circle') {
-                    pCtx.strokeStyle = colorPicker.value; pCtx.fillStyle = colorPicker.value + "44"; pCtx.setLineDash([6, 6]);
-                    pCtx.beginPath(); pCtx.arc(startX, startY, Math.sqrt(Math.pow(pos.x - startX, 2) + Math.pow(pos.y - startY, 2)), 0, 2 * Math.PI); pCtx.fill(); pCtx.stroke(); pCtx.setLineDash([]);
-                }
-            } else {
-                if (toolPicker.value === 'pencil') { pCtx.strokeStyle = colorPicker.value; pCtx.beginPath(); pCtx.arc(pos.x, pos.y, parseInt(document.getElementById('pencilSizePicker').value)/2, 0, 2*Math.PI); pCtx.stroke(); }
-            }
+                } else if (t === 'square') { pCtx.strokeStyle = c; pCtx.strokeRect(startX, startY, pos.x - startX, pos.y - startY); }
+                else if (t === 'circle') { pCtx.strokeStyle = c; pCtx.beginPath(); pCtx.arc(startX, startY, Math.sqrt(Math.pow(pos.x-startX,2)+Math.pow(pos.y-startY,2)), 0, 2*Math.PI); pCtx.stroke(); }
+            } else { if(t === 'pencil') { pCtx.strokeStyle = c; pCtx.beginPath(); pCtx.arc(pos.x, pos.y, document.getElementById('pencilSizePicker').value/2, 0, 2*Math.PI); pCtx.stroke(); } }
         });
 
         window.addEventListener('mouseup', (e) => {
-            if ((isBanned && !isDev) || !isDrawing) return;
-            pCtx.clearRect(0, 0, previewCanvas.width, previewCanvas.height);
-            const pos = getMousePos(e); dCtx.fillStyle = colorPicker.value;
-            if (toolPicker.value === 'square') {
-                dCtx.fillRect(startX, startY, pos.x - startX, pos.y - startY);
-                if(roomChannel) roomChannel.send({ type: 'broadcast', event: 'draw', payload: { tool: 'square', x0: startX, y0: startY, w: pos.x - startX, h: pos.y - startY, color: colorPicker.value }});
-            } else if (toolPicker.value === 'circle') {
-                const rad = Math.sqrt(Math.pow(pos.x - startX, 2) + Math.pow(pos.y - startY, 2)); dCtx.beginPath(); dCtx.arc(startX, startY, rad, 0, 2 * Math.PI); dCtx.fill();
-                if(roomChannel) roomChannel.send({ type: 'broadcast', event: 'draw', payload: { tool: 'circle', x0: startX, y0: startY, r: rad, color: colorPicker.value }});
-            }
-            isDrawing = false; saveToCloud();
+            if (!isDrawing) return; const pos = getMouse(e), t = document.getElementById('toolPicker').value, c = document.getElementById('colorPicker').value; dCtx.fillStyle = c;
+            if (t === 'square') { dCtx.fillRect(startX, startY, pos.x - startX, pos.y - startY); roomChannel.send({ type: 'broadcast', event: 'draw', payload: { tool: 'square', x0: startX, y0: startY, w: pos.x - startX, h: pos.y - startY, color: c }}); }
+            if (t === 'circle') { const r = Math.sqrt(Math.pow(pos.x-startX,2)+Math.pow(pos.y-startY,2)); dCtx.beginPath(); dCtx.arc(startX, startY, r, 0, 2*Math.PI); dCtx.fill(); roomChannel.send({ type: 'broadcast', event: 'draw', payload: { tool: 'circle', x0: startX, y0: startY, r, color: c }}); }
+            isDrawing = false; db.from('whiteboard').insert([{ room_id: currentRoomId, image_data: drawingCanvas.toDataURL() }]); // Save
         });
-
-        function spawnInlineText(x, y) {
-            commitInlineText(); const size = parseInt(document.getElementById('textSizePicker').value); activeTextCoords = { x, y };
-            inlineTextInput.style.left = `${x}px`; inlineTextInput.style.top = `${y - size * 0.8}px`; inlineTextInput.style.fontSize = `${size}px`; inlineTextInput.style.color = colorPicker.value;
-            inlineTextInput.value = ''; inlineTextInput.classList.remove('hidden'); inlineTextInput.focus();
-        }
-        function commitInlineText() {
-            if (!activeTextCoords || inlineTextInput.classList.contains('hidden')) return;
-            const txt = inlineTextInput.value.trim(), size = parseInt(document.getElementById('textSizePicker').value);
-            if (txt && (!isBanned || isDev)) {
-                dCtx.fillStyle = colorPicker.value; dCtx.font = `${size}px Arial`; dCtx.fillText(txt, activeTextCoords.x, activeTextCoords.y);
-                if(roomChannel) roomChannel.send({ type: 'broadcast', event: 'draw', payload: { tool: 'text', x0: activeTextCoords.x, y0: activeTextCoords.y, text: txt, color: colorPicker.value, size }});
-                saveToCloud();
-            }
-            inlineTextInput.classList.add('hidden'); activeTextCoords = null;
-        }
-        inlineTextInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') commitInlineText(); if (e.key === 'Escape') inlineTextInput.classList.add('hidden'); });
 
         // --- ADMIN PANEL ---
         const adminModal = document.getElementById('adminModal');
-        const adminLoginBox = document.getElementById('adminLoginBox');
-        const adminDashboardBox = document.getElementById('adminDashboardBox');
-
-        function openAdminDashboard() {
-            adminLoginBox.classList.add('hidden'); adminDashboardBox.classList.remove('hidden');
-            document.getElementById('editRoomName').value = currentRoomData.room_name;
-            document.getElementById('editRoomCode').value = currentRoomData.room_code || '';
-            document.getElementById('editRoomWidth').value = currentRoomData.width;
-            document.getElementById('editRoomHeight').value = currentRoomData.height;
-            document.getElementById('editRoomVisibility').value = currentRoomData.is_public ? 'public' : 'private';
-            updatePlayerUI(); fetchBans();
-        }
-
+        
         document.getElementById('openAdminBtn').addEventListener('click', () => {
             adminModal.classList.remove('hidden');
-            // Auto-Admin Check OR Dev God-Mode Bypass
             if (isDev || localStorage.getItem(`admin_${currentRoomId}`) === 'true') {
-                openAdminDashboard();
-            } else {
-                adminLoginBox.classList.remove('hidden'); adminDashboardBox.classList.add('hidden');
-            }
+                document.getElementById('adminLoginBox').classList.add('hidden'); document.getElementById('adminDashboardBox').classList.remove('hidden');
+                updatePlayerUI(); fetchPunishments();
+            } else { document.getElementById('adminLoginBox').classList.remove('hidden'); document.getElementById('adminDashboardBox').classList.add('hidden'); }
         });
-
         document.getElementById('closeAdminLoginBtn').addEventListener('click', () => adminModal.classList.add('hidden'));
         document.getElementById('closeAdminDashBtn').addEventListener('click', () => adminModal.classList.add('hidden'));
 
-        document.getElementById('submitAdminLoginBtn').addEventListener('click', () => {
-            if (document.getElementById('adminPasswordInput').value === currentRoomData.admin_password) {
-                document.getElementById('adminPasswordInput').value = '';
-                localStorage.setItem(`admin_${currentRoomId}`, 'true');
-                openAdminDashboard();
-            } else { alert("Incorrect Admin Password for this room!"); }
-        });
+        function getExpirationISO() {
+            const mins = document.getElementById('punishDuration').value;
+            return mins ? new Date(Date.now() + mins * 60000).toISOString() : null;
+        }
 
-        document.getElementById('adminClearBtn').addEventListener('click', () => {
-            dCtx.clearRect(0, 0, drawingCanvas.width, drawingCanvas.height); saveToCloud();
-            if(roomChannel) roomChannel.send({ type: 'broadcast', event: 'clear' });
-        });
-
-        document.getElementById('adminFillBtn').addEventListener('click', () => {
-            const c = document.getElementById('fillColorPicker').value; dCtx.fillStyle = c; dCtx.fillRect(0, 0, drawingCanvas.width, drawingCanvas.height); saveToCloud();
-            if(roomChannel) roomChannel.send({ type: 'broadcast', event: 'fill', payload: { c } });
-        });
-
-        document.getElementById('saveRoomSettingsBtn').addEventListener('click', async () => {
-            const newName = document.getElementById('editRoomName').value.trim();
-            const newCode = document.getElementById('editRoomCode').value.trim();
-            const newW = parseInt(document.getElementById('editRoomWidth').value);
-            const newH = parseInt(document.getElementById('editRoomHeight').value);
-            const isPub = document.getElementById('editRoomVisibility').value === 'public';
-
-            const { error } = await db.from('rooms').update({ room_name: newName, room_code: newCode, width: newW, height: newH, is_public: isPub }).eq('room_id', currentRoomId);
-            if(error) { alert("Failed to update (Code might be taken): " + error.message); } 
-            else {
-                currentRoomData.room_name = newName; currentRoomData.room_code = newCode; currentRoomData.width = newW; currentRoomData.height = newH; currentRoomData.is_public = isPub;
-                document.getElementById('statusText').innerText = isDev ? `🛠️ Dev God-Mode: ${newName}` : `Room: ${newName}`;
-                resizeCanvasLogic(newW, newH, true);
-                if(roomChannel) roomChannel.send({ type: 'broadcast', event: 'settings_updated', payload: { name: newName, code: newCode, w: newW, h: newH }});
-                alert("Room settings updated successfully!");
+        window.punishUser = async (id, name, type) => {
+            const expires = getExpirationISO();
+            const table = type === 'ban' ? 'banned_users' : 'muted_users';
+            
+            if (confirm(`${type.toUpperCase()} ${name}?`)) {
+                await db.from(table).insert([{ room_id: currentRoomId, user_id: id, user_name: name, expires_at: expires }]);
+                if(roomChannel) roomChannel.send({ type: 'broadcast', event: 'punish', payload: { id, type } });
+                fetchPunishments(); updatePlayerUI();
             }
-        });
+        };
+
+        window.unpunishUser = async (id, type) => {
+            const table = type === 'ban' ? 'banned_users' : 'muted_users';
+            await db.from(table).delete().eq('room_id', currentRoomId).eq('user_id', id); 
+            if(type === 'mute' && roomChannel) roomChannel.send({ type: 'broadcast', event: 'punish', payload: { id, type: 'unmute' }});
+            fetchPunishments();
+        };
 
         function updatePlayerUI() {
             const c = document.getElementById('playerListContainer'); c.innerHTML = '';
             Object.keys(activePlayers).forEach(id => {
-                c.innerHTML += `<div style="display:flex; justify-content:space-between; margin-bottom:4px; color:white;">
-                    <span>${activePlayers[id].name}</span>
-                    ${id !== myId ? `<button class="danger-btn" style="padding:2px 6px" onclick="banUser('${id}', '${activePlayers[id].name}')">Ban</button>` : ''}
+                const p = activePlayers[id];
+                c.innerHTML += `<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px; color:white;">
+                    <span>${p.name} <span style="color:#aaa; font-size:10px;">(${p.ping}ms)</span></span>
+                    ${id !== myId ? `<div style="display:flex; gap:4px;">
+                        <button class="secondary-btn icon-btn" onclick="punishUser('${id}', '${p.name}', 'mute')">Mute</button>
+                        <button class="danger-btn icon-btn" onclick="punishUser('${id}', '${p.name}', 'ban')">Ban</button>
+                    </div>` : ''}
                 </div>`;
             });
         }
 
-        async function fetchBans() {
+        async function fetchPunishments() {
             const c = document.getElementById('bannedListContainer'); c.innerHTML = 'Loading...';
-            const { data } = await db.from('banned_users').select('*').eq('room_id', currentRoomId);
-            c.innerHTML = data && data.length ? '' : '<span style="color:#888">No bans in this room.</span>';
-            (data || []).forEach(b => {
+            const { data: bData } = await db.from('banned_users').select('*').eq('room_id', currentRoomId);
+            const { data: mData } = await db.from('muted_users').select('*').eq('room_id', currentRoomId);
+            c.innerHTML = '';
+            
+            const renderRow = (d, type) => {
+                const exp = d.expires_at ? new Date(d.expires_at).toLocaleTimeString() : 'Perm';
                 c.innerHTML += `<div style="display:flex; justify-content:space-between; margin-bottom:4px; color:white;">
-                    <span>${b.user_name || b.user_id}</span>
-                    <button class="secondary-btn" style="padding:2px 6px" onclick="unbanUser('${b.user_id}')">Unban</button>
+                    <span>[${type.toUpperCase()}] ${d.user_name} (${exp})</span>
+                    <button class="secondary-btn icon-btn" onclick="unpunishUser('${d.user_id}', '${type}')">Undo</button>
                 </div>`;
-            });
+            };
+            (bData || []).forEach(d => renderRow(d, 'ban')); (mData || []).forEach(d => renderRow(d, 'mute'));
+            if(c.innerHTML === '') c.innerHTML = '<span style="color:#888">No punishments.</span>';
         }
-
-        window.banUser = async (id, name) => {
-            if (confirm(`Ban ${name} from this room?`)) {
-                await db.from('banned_users').insert([{ room_id: currentRoomId, user_id: id, user_name: name }]);
-                if(roomChannel) roomChannel.send({ type: 'broadcast', event: 'ban', payload: { id, name } });
-                fetchBans(); updatePlayerUI();
-            }
-        };
-
-        window.unbanUser = async (id) => {
-            if (confirm("Unban user?")) {
-                await db.from('banned_users').delete().eq('room_id', currentRoomId).eq('user_id', id); fetchBans();
-            }
-        };
 
         setInterval(() => {
             const now = Date.now();
             Object.keys(activePlayers).forEach(id => {
-                if (now - activePlayers[id].lastSeen > 8000) {
-                    delete activePlayers[id]; const cur = document.getElementById(`cursor-${id}`); if(cur) cur.remove();
-                }
+                if (now - activePlayers[id].lastSeen > 8000) { delete activePlayers[id]; const cur = document.getElementById(`cursor-${id}`); if(cur) cur.remove(); }
             });
-            if (!adminDashboardBox.classList.contains('hidden')) updatePlayerUI();
+            if (!document.getElementById('adminDashboardBox').classList.contains('hidden')) updatePlayerUI();
         }, 5000);
     </script>
 </body>
