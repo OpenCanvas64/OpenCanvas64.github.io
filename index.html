@@ -34,6 +34,19 @@
         button.dev-btn { background-color: #ff9800; color: black; }
         button.icon-btn { padding: 4px 8px; font-size: 12px; }
 
+        /* COLOR PICKER FIX */
+        #colorPicker {
+            width: 36px;
+            height: 36px;
+            padding: 0;
+            border: 1px solid #555;
+            border-radius: 4px;
+            cursor: pointer;
+            background: transparent;
+        }
+        #colorPicker::-webkit-color-swatch-wrapper { padding: 0; }
+        #colorPicker::-webkit-color-swatch { border: none; border-radius: 3px; }
+
         .canvas-wrapper { position: relative; background: transparent; box-shadow: 0 0 30px rgba(0,0,0,0.8); margin: 80px 20px 20px 20px; }
         canvas { position: absolute; top: 0; left: 0; }
         #drawingCanvas { background-color: #ffffff; z-index: 1; }
@@ -483,38 +496,32 @@
 
         // --- PUNISHMENT & PERSISTENT BAN CHECK ---
         async function checkPunishments(roomId, myName) {
-            // 1. Devs bypass punishments
             if (isDev) return { banned: false, muted: false, reason: null, banExpires: null, muteExpires: null };
             
             const cleanName = myName.trim().toLowerCase();
             const now = new Date();
             
             try {
-                // 2. Fetch all punishments for this room from the database
                 const { data: banData, error: banErr } = await db.from('banned_users').select('*').eq('room_id', roomId);
                 const { data: muteData, error: muteErr } = await db.from('muted_users').select('*').eq('room_id', roomId);
                 
                 if (banErr) console.error("Ban fetch error:", banErr);
 
-                // 3. Find if this specific user is banned, AND ensure the ban hasn't expired yet
                 const myBan = (banData || []).find(b => {
                     const isMe = b.user_id === myId || (b.user_name && b.user_name.trim().toLowerCase() === cleanName);
-                    const isActive = !b.expires_at || new Date(b.expires_at) > now; // Null = perm, or future date
+                    const isActive = !b.expires_at || new Date(b.expires_at) > now;
                     return isMe && isActive;
                 });
 
-                // 4. Find if this specific user is muted, AND ensure the mute hasn't expired yet
                 const myMute = (muteData || []).find(m => {
                     const isMe = m.user_id === myId || (m.user_name && m.user_name.trim().toLowerCase() === cleanName);
                     const isActive = !m.expires_at || new Date(m.expires_at) > now;
                     return isMe && isActive;
                 });
 
-                // 5. Sync the local browser cache with the actual database truth
                 if (myBan) {
                     localStorage.setItem(`banned_${roomId}`, 'true');
                 } else {
-                    // CRITICAL: If they aren't banned in the DB (or it expired), remove the local block!
                     localStorage.removeItem(`banned_${roomId}`); 
                 }
 
@@ -528,7 +535,6 @@
                 
             } catch (e) {
                 console.error("Punishment verification failed:", e);
-                // Fallback: only if DB totally crashes, rely on local storage
                 const locallyBanned = localStorage.getItem(`banned_${roomId}`) === 'true';
                 return { banned: locallyBanned, muted: false, reason: "Connection error. Local ban cache active.", banExpires: null, muteExpires: null };
             }
@@ -694,30 +700,65 @@
             
             roomChannel.on('broadcast', { event: 'punish' }, (p) => {
                 const { id, name, type, reason, expires } = p.payload;
+                
+                // 1. Global Dev Commands (Affects everyone)
+                if (type === 'unbanall') {
+                    isBanned = false;
+                    localStorage.removeItem(`banned_${currentRoomId}`);
+                    document.getElementById('banOverlay').classList.add('hidden');
+                    startPenaltyTimer(null);
+                    return;
+                }
+                
+                if (type === 'unmuteall') {
+                    isMuted = false;
+                    startPenaltyTimer(null);
+                    appendChat("All players have been unmuted by a Developer.", 'system');
+                    return;
+                }
+
+                // 2. Targeted Commands (Affects specific player)
                 const isTarget = id === myId || (name && name.trim().toLowerCase() === globalNameInput.value.trim().toLowerCase());
                 
                 if (isTarget && !isDev) {
-                    if (type === 'ban') { 
+                    if (type === 'kick') {
+                        db.removeChannel(roomChannel); // Disconnect immediately
+                        
+                        // Update the ban overlay text to show it's just a kick
+                        const overlay = document.getElementById('banOverlay');
+                        overlay.querySelector('h1').innerText = "🥾 KICKED";
+                        overlay.querySelector('p').innerText = "You were kicked from this room. You are not banned and may rejoin.";
+                        document.getElementById('banReasonDisplay').innerText = `Reason: ${reason}`;
+                        
+                        overlay.classList.remove('hidden');
+                    }
+                    else if (type === 'ban') { 
                         isBanned = true; 
                         localStorage.setItem(`banned_${currentRoomId}`, 'true'); 
                         db.removeChannel(roomChannel); 
+                        
+                        // Reset overlay text in case they were kicked previously
+                        const overlay = document.getElementById('banOverlay');
+                        overlay.querySelector('h1').innerText = "🚫 BANNED";
+                        overlay.querySelector('p').innerText = "You have been banned from this room by the Admin.";
                         if(reason) document.getElementById('banReasonDisplay').innerText = `Reason: ${reason}`;
-                        document.getElementById('banOverlay').classList.remove('hidden'); 
+                        
+                        overlay.classList.remove('hidden'); 
                         startPenaltyTimer('BAN', expires);
                     }
-                    if (type === 'unban') {
+                    else if (type === 'unban') {
                         isBanned = false;
                         localStorage.removeItem(`banned_${currentRoomId}`);
                         document.getElementById('banOverlay').classList.add('hidden');
                         startPenaltyTimer(null);
                         alert("You have been unbanned by the room admin.");
                     }
-                    if (type === 'mute') { 
+                    else if (type === 'mute') { 
                         isMuted = true; 
                         appendChat(`You have been muted by an Admin.${reason ? ` Reason: ${reason}` : ''}`, 'system'); 
                         startPenaltyTimer('MUTE', expires);
                     }
-                    if (type === 'unmute') { 
+                    else if (type === 'unmute') { 
                         isMuted = false; 
                         startPenaltyTimer(null);
                         appendChat("You have been unmuted.", 'system'); 
@@ -768,7 +809,7 @@
                 const cmd = msg.split(' ')[0].toLowerCase();
                 
                 if (cmd === '/help') {
-                    appendChat("Commands: /help, /clear, /me <text>, /msg <User> <Message>, /ban <User> [Mins] [Reason]", 'system');
+                    appendChat("Commands: /help, /clear, /me <text>, /msg <User> <Message>, /kick <User> [Reason], /ban <User> [Mins] [Reason]", 'system');
                     return;
                 }
                 
@@ -850,7 +891,7 @@
                     if (error) {
                         console.error("Database insert error:", error);
                         appendChat(`[System]: Failed to ban user - Database error.`, 'system');
-                        return; // Stop here if DB write fails
+                        return;
                     }
 
                     if (roomChannel) {
@@ -862,6 +903,59 @@
                     }
 
                     appendChat(`[System]: Banned '${targetName}'${mins ? ` for ${mins}m` : ' permanently'}.${finalReason ? ` Reason: ${finalReason}` : ''}`, 'system');
+                    fetchPunishments();
+                    return;
+                }
+
+                // --- NEW: KICK COMMAND (Admin & Dev) ---
+                if (cmd === '/kick') {
+                    const isAdmin = isDev || localStorage.getItem(`admin_${currentRoomId}`) === 'true';
+                    if (!isAdmin) return appendChat("[System]: You do not have permission to use /kick.", 'system');
+
+                    const args = msg.substring(6).trim().split(' ');
+                    if (!args[0]) return appendChat("[System]: Usage: /kick <User> [Reason]", 'system');
+
+                    const targetNameInput = args[0];
+                    const reason = args.slice(1).join(' ').trim() || 'No reason provided';
+                    
+                    let targetId = Object.keys(activePlayers).find(id => activePlayers[id].name.toLowerCase() === targetNameInput.toLowerCase());
+                    const targetName = targetId ? activePlayers[targetId].name : targetNameInput;
+                    if (!targetId) targetId = targetNameInput;
+
+                    if (roomChannel) {
+                        roomChannel.send({ 
+                            type: 'broadcast', 
+                            event: 'punish', 
+                            payload: { id: targetId, name: targetName, type: 'kick', reason: reason } 
+                        });
+                    }
+
+                    appendChat(`[System]: Kicked '${targetName}'. Reason: ${reason}`, 'system');
+                    return;
+                }
+
+                // --- NEW: UNBAN ALL (Dev Only) ---
+                if (cmd === '/unbanall') {
+                    if (!isDev) return appendChat("[System]: Only Developers can use /unbanall.", 'system');
+                    
+                    await db.from('banned_users').delete().eq('room_id', currentRoomId);
+                    if (roomChannel) {
+                        roomChannel.send({ type: 'broadcast', event: 'punish', payload: { type: 'unbanall' } });
+                    }
+                    appendChat("[System]: All bans in this room have been cleared.", 'system');
+                    fetchPunishments();
+                    return;
+                }
+
+                // --- NEW: UNMUTE ALL (Dev Only) ---
+                if (cmd === '/unmuteall') {
+                    if (!isDev) return appendChat("[System]: Only Developers can use /unmuteall.", 'system');
+                    
+                    await db.from('muted_users').delete().eq('room_id', currentRoomId);
+                    if (roomChannel) {
+                        roomChannel.send({ type: 'broadcast', event: 'punish', payload: { type: 'unmuteall' } });
+                    }
+                    appendChat("[System]: All mutes in this room have been cleared.", 'system');
                     fetchPunishments();
                     return;
                 }
@@ -1028,7 +1122,7 @@
                 if (error) {
                     alert(`Failed to save punishment to database: ${error.message}`);
                     console.error("Punish insert error:", error);
-                    return; // ⛔ STOP HERE if the DB write fails!
+                    return;
                 }
 
                 if(roomChannel) {
@@ -1047,7 +1141,7 @@
             if (error) {
                 alert(`Database Error (unpunish): ${error.message}`);
                 console.error("Unpunish error:", error);
-                return; // ⛔ STOP HERE if the DB write fails!
+                return;
             }
 
             if(roomChannel) {
