@@ -10,7 +10,6 @@
             background-color: #2a2a2a;
             font-family: sans-serif;
             user-select: none;
-            /* Allow scrolling for large canvases */
             overflow: auto; 
             display: flex;
             justify-content: center;
@@ -71,11 +70,7 @@
             border-radius: 8px;
             transition: background 0.2s;
         }
-
-        .room-row:hover {
-            background: #444;
-        }
-
+        .room-row:hover { background: #444; }
         .room-details { display: flex; flex-direction: column; gap: 4px; }
         .room-title { font-size: 18px; font-weight: bold; color: #4CAF50; }
         .room-meta { font-size: 12px; color: #aaa; }
@@ -127,14 +122,10 @@
             position: relative;
             background: transparent;
             box-shadow: 0 0 30px rgba(0,0,0,0.8);
-            margin: 80px 20px 20px 20px; /* Space for toolbar */
+            margin: 80px 20px 20px 20px;
         }
 
-        canvas {
-            position: absolute;
-            top: 0; left: 0;
-        }
-
+        canvas { position: absolute; top: 0; left: 0; }
         #drawingCanvas { background-color: #ffffff; z-index: 1; }
         #previewCanvas { z-index: 2; cursor: crosshair; pointer-events: auto; }
 
@@ -151,52 +142,51 @@
         }
 
         .remote-cursor {
-            position: absolute;
-            pointer-events: none;
-            z-index: 50;
+            position: absolute; pointer-events: none; z-index: 50;
             transition: top 0.05s linear, left 0.05s linear;
         }
-        
         .cursor-pointer {
-            width: 14px; height: 14px;
-            background-color: red;
-            border-radius: 50%;
-            border: 2px solid white;
+            width: 14px; height: 14px; background-color: red;
+            border-radius: 50%; border: 2px solid white;
             box-shadow: 0 2px 5px rgba(0,0,0,0.4);
             transform: translate(-50%, -50%);
         }
-        
         .cursor-name {
-            position: absolute;
-            top: -24px; left: -10px;
+            position: absolute; top: -24px; left: -10px;
             background: rgba(0,0,0,0.8); color: white;
-            padding: 2px 6px; border-radius: 4px;
-            font-size: 11px; white-space: nowrap;
+            padding: 2px 6px; border-radius: 4px; font-size: 11px; white-space: nowrap;
         }
 
         .modal-overlay {
-            position: fixed;
-            top: 0; left: 0; width: 100vw; height: 100vh;
-            background: rgba(0,0,0,0.85);
-            display: flex; justify-content: center; align-items: center;
+            position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+            background: rgba(0,0,0,0.85); display: flex; justify-content: center; align-items: center;
             z-index: 3000;
         }
 
         .modal-box {
-            background: #2a2a2a;
-            padding: 24px; border-radius: 12px;
+            background: #2a2a2a; padding: 24px; border-radius: 12px;
             display: flex; flex-direction: column; gap: 14px;
             width: 360px; color: white;
             box-shadow: 0 8px 32px rgba(0,0,0,0.6);
+            max-height: 90vh; overflow-y: auto;
         }
 
-        .modal-box h2, .modal-box h3 { margin: 0; text-align: center; color: #fff; }
+        .modal-box h2, .modal-box h3, .modal-box h4 { margin: 0; text-align: center; color: #fff; }
         .modal-box label { font-size: 13px; color: #ccc; font-weight: bold; }
 
         .hidden { display: none !important; }
         
         #banOverlay {
             background: rgba(180, 0, 0, 0.95); color: white; z-index: 9999; text-align: center;
+        }
+
+        .admin-section {
+            background: #333;
+            padding: 12px;
+            border-radius: 6px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
         }
     </style>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -236,6 +226,9 @@
             <label>Room Name:</label>
             <input type="text" id="newRoomName" placeholder="e.g. Pixel Artists Hangout">
             
+            <label>Custom Room Code (Optional):</label>
+            <input type="text" id="newRoomCode" placeholder="Leave blank for random...">
+
             <div style="display: flex; gap: 12px;">
                 <div style="flex: 1; display: flex; flex-direction: column; gap: 4px;">
                     <label>Width (px):</label>
@@ -264,14 +257,11 @@
     </div>
 
     <div id="mainAppView" class="hidden">
-        
         <div id="toolbar">
             <button id="leaveRoomBtn" style="background: #555;">🏠 Leave</button>
             <div style="width: 1px; height: 24px; background: #666; margin: 0 4px;"></div>
             
-            <div class="tool-group">
-                <input type="color" id="colorPicker" value="#000000">
-            </div>
+            <div class="tool-group"><input type="color" id="colorPicker" value="#000000"></div>
             <div class="tool-group">
                 <select id="toolPicker">
                     <option value="pencil">Pencil</option>
@@ -332,31 +322,61 @@
             </div>
         </div>
 
-        <div id="adminDashboardBox" class="modal-box hidden" style="width: 400px;">
+        <div id="adminDashboardBox" class="modal-box hidden" style="width: 440px;">
             <h3>🛠️ Room Admin Panel</h3>
-            <div style="display: flex; gap: 8px;">
-                <button id="adminClearBtn" class="danger-btn" style="flex: 1;">Clear Canvas</button>
-                <button id="adminFillBtn" class="secondary-btn" style="flex: 1;">Fill Screen</button>
-                <input type="color" id="fillColorPicker" value="#ffffff" style="padding: 0; width: 40px;">
+            
+            <div class="admin-section">
+                <h4>🎨 Quick Actions</h4>
+                <div style="display: flex; gap: 8px;">
+                    <button id="adminClearBtn" class="danger-btn" style="flex: 1;">Clear Canvas</button>
+                    <button id="adminFillBtn" class="secondary-btn" style="flex: 1;">Fill Screen</button>
+                    <input type="color" id="fillColorPicker" value="#ffffff" style="padding: 0; width: 40px;">
+                </div>
             </div>
-            <hr style="width: 100%; border-top: 1px solid #555; margin: 4px 0;">
-            <label>Connected Players:</label>
-            <div id="playerListContainer" style="max-height: 100px; overflow-y: auto; background: #222; padding: 6px; border-radius: 4px;"></div>
+
+            <div class="admin-section">
+                <h4>⚙️ Edit Room Settings</h4>
+                <div style="display: flex; flex-direction: column; gap: 6px;">
+                    <label>Room Name:</label>
+                    <input type="text" id="editRoomName">
+                    
+                    <div style="display: flex; gap: 8px;">
+                        <div style="flex: 1;">
+                            <label>Width (px):</label>
+                            <input type="number" id="editRoomWidth" style="width: 100%;">
+                        </div>
+                        <div style="flex: 1;">
+                            <label>Height (px):</label>
+                            <input type="number" id="editRoomHeight" style="width: 100%;">
+                        </div>
+                    </div>
+                    
+                    <label>Visibility:</label>
+                    <select id="editRoomVisibility">
+                        <option value="public">🌐 Public (Listed)</option>
+                        <option value="private">🔒 Private (Hidden, Code Only)</option>
+                    </select>
+                    <button id="saveRoomSettingsBtn" class="admin-btn" style="margin-top: 6px;">Save & Broadcast Changes</button>
+                </div>
+            </div>
+
+            <div class="admin-section">
+                <h4>👥 Player Management</h4>
+                <label>Connected Players:</label>
+                <div id="playerListContainer" style="max-height: 100px; overflow-y: auto; background: #222; padding: 6px; border-radius: 4px;"></div>
+                <label style="margin-top: 10px;">Banned Players (This Room):</label>
+                <div id="bannedListContainer" style="max-height: 100px; overflow-y: auto; background: #222; padding: 6px; border-radius: 4px;"></div>
+            </div>
             
-            <label style="margin-top: 10px;">Banned Players (This Room):</label>
-            <div id="bannedListContainer" style="max-height: 100px; overflow-y: auto; background: #222; padding: 6px; border-radius: 4px;"></div>
-            
-            <button id="closeAdminDashBtn" style="background: #666; margin-top: 10px;">Close Admin Panel</button>
+            <button id="closeAdminDashBtn" style="background: #666; margin-top: 4px;">Close Admin Panel</button>
         </div>
     </div>
 
     <script>
-        // Supabase Credentials
         const supabaseUrl = 'https://uyvlsurevydjaxxnlyxh.supabase.co';
         const supabaseKey = 'sb_publishable_XTu1_XJMCZdkYJgeOqJjKw_MgmnLvF9'; 
         const db = window.supabase.createClient(supabaseUrl, supabaseKey);
 
-        // Core State
         let myId = localStorage.getItem('canvas_my_id') || Math.random().toString(36).substr(2, 9);
         localStorage.setItem('canvas_my_id', myId);
         
@@ -366,15 +386,12 @@
         let activePlayers = {}; 
         let isBanned = false;
 
-        // UI Refs - Lobby
         const lobbyView = document.getElementById('lobbyView');
         const mainAppView = document.getElementById('mainAppView');
         const globalNameInput = document.getElementById('globalNameInput');
         const publicRoomsList = document.getElementById('publicRoomsList');
         const createRoomModal = document.getElementById('createRoomModal');
-        const privateCodeInput = document.getElementById('privateCodeInput');
         
-        // UI Refs - Canvas
         const canvasWrapper = document.getElementById('canvasWrapper');
         const drawingCanvas = document.getElementById('drawingCanvas');
         const dCtx = drawingCanvas.getContext('2d');
@@ -382,34 +399,21 @@
         const pCtx = previewCanvas.getContext('2d');
         const inlineTextInput = document.getElementById('inlineTextInput');
         const cursorsContainer = document.getElementById('cursorsContainer');
-        const toolPicker = document.getElementById('toolPicker');
         const colorPicker = document.getElementById('colorPicker');
 
         globalNameInput.value = localStorage.getItem('canvas_user_name') || "Anonymous";
         globalNameInput.addEventListener('input', (e) => localStorage.setItem('canvas_user_name', e.target.value.trim()));
 
-        // ==========================================
-        // LOBBY & ROOM MANAGEMENT
-        // ==========================================
-        
         async function fetchPublicRooms() {
             publicRoomsList.innerHTML = '<div style="text-align: center; color: #888; padding: 20px;">Loading rooms...</div>';
             const { data, error } = await db.from('rooms').select('*').eq('is_public', true).order('created_at', { ascending: false });
             
-            if (error) {
-                publicRoomsList.innerHTML = `<div style="color: red; padding: 10px;">Error: ${error.message}</div>`;
-                return;
-            }
-
+            if (error) { publicRoomsList.innerHTML = `<div style="color: red; padding: 10px;">Error: ${error.message}</div>`; return; }
             publicRoomsList.innerHTML = '';
-            if (!data || data.length === 0) {
-                publicRoomsList.innerHTML = '<div style="text-align: center; color: #888; padding: 20px;">No public rooms available. Create one!</div>';
-                return;
-            }
+            if (!data || data.length === 0) { publicRoomsList.innerHTML = '<div style="text-align: center; color: #888; padding: 20px;">No public rooms available. Create one!</div>'; return; }
 
             data.forEach(room => {
-                const div = document.createElement('div');
-                div.className = 'room-row';
+                const div = document.createElement('div'); div.className = 'room-row';
                 div.innerHTML = `
                     <div class="room-details">
                         <span class="room-title">${room.room_name}</span>
@@ -420,118 +424,72 @@
                 publicRoomsList.appendChild(div);
             });
         }
-        fetchPublicRooms(); // Init lobby
+        fetchPublicRooms();
 
         document.getElementById('openCreateRoomBtn').addEventListener('click', () => createRoomModal.classList.remove('hidden'));
         document.getElementById('cancelCreateRoomBtn').addEventListener('click', () => createRoomModal.classList.add('hidden'));
 
         document.getElementById('submitCreateRoomBtn').addEventListener('click', async () => {
             const name = document.getElementById('newRoomName').value.trim() || "Untitled Room";
+            let code = document.getElementById('newRoomCode').value.trim();
+            if (!code) code = "room-" + Math.random().toString(36).substr(2, 6);
+            
             const w = parseInt(document.getElementById('newRoomWidth').value) || 1280;
             const h = parseInt(document.getElementById('newRoomHeight').value) || 720;
             const isPublic = document.getElementById('newRoomVisibility').value === 'public';
             const adminPass = document.getElementById('newRoomAdminPass').value || "1234";
-            const code = "room-" + Math.random().toString(36).substr(2, 6);
 
-            const { error } = await db.from('rooms').insert([{
-                room_code: code, room_name: name, width: w, height: h, is_public: isPublic, admin_password: adminPass
-            }]);
+            const { error } = await db.from('rooms').insert([{ room_code: code, room_name: name, width: w, height: h, is_public: isPublic, admin_password: adminPass }]);
 
-            if (error) {
-                alert("Failed to create room: " + error.message);
-            } else {
-                createRoomModal.classList.add('hidden');
-                joinRoom(code);
-            }
+            if (error) { alert("Failed to create room. If using a custom code, someone else might have taken it! Error: " + error.message); } 
+            else { createRoomModal.classList.add('hidden'); joinRoom(code); }
         });
 
         document.getElementById('joinPrivateBtn').addEventListener('click', () => {
-            const code = privateCodeInput.value.trim();
+            const code = document.getElementById('privateCodeInput').value.trim();
             if (code) joinRoom(code);
         });
 
         document.getElementById('leaveRoomBtn').addEventListener('click', () => location.reload());
 
-        // ==========================================
-        // JOINING & REALTIME NETWORKING
-        // ==========================================
-
         async function joinRoom(code) {
             const myName = globalNameInput.value.trim() || "Anonymous";
 
-            // 1. Fetch Room Data
             const { data: roomDataArr, error: roomError } = await db.from('rooms').select('*').eq('room_code', code).limit(1);
-            if (roomError || !roomDataArr || roomDataArr.length === 0) {
-                alert("Room not found!"); return;
-            }
-            currentRoomData = roomDataArr[0];
-            currentRoomCode = code;
+            if (roomError || !roomDataArr || roomDataArr.length === 0) { alert("Room not found!"); return; }
+            currentRoomData = roomDataArr[0]; currentRoomCode = code;
 
-            // 2. Check Ban Status for THIS room
-            const { data: banData } = await db.from('banned_users').select('*')
-                .eq('room_code', code)
-                .or(`user_id.eq.${myId},user_name.ilike.${myName}`);
-            
-            if (banData && banData.length > 0) {
-                document.getElementById('banOverlay').classList.remove('hidden');
-                return;
-            }
+            const { data: banData } = await db.from('banned_users').select('*').eq('room_code', code).or(`user_id.eq.${myId},user_name.ilike.${myName}`);
+            if (banData && banData.length > 0) { document.getElementById('banOverlay').classList.remove('hidden'); return; }
 
-            // 3. Setup Canvas Size
-            drawingCanvas.width = currentRoomData.width;
-            drawingCanvas.height = currentRoomData.height;
-            previewCanvas.width = currentRoomData.width;
-            previewCanvas.height = currentRoomData.height;
-            canvasWrapper.style.width = `${currentRoomData.width}px`;
-            canvasWrapper.style.height = `${currentRoomData.height}px`;
+            resizeCanvasLogic(currentRoomData.width, currentRoomData.height);
             
-            dCtx.lineCap = 'round'; pCtx.lineCap = 'round';
-            
-            // 4. Swap Views
-            lobbyView.classList.add('hidden');
-            mainAppView.classList.remove('hidden');
+            lobbyView.classList.add('hidden'); mainAppView.classList.remove('hidden');
             document.getElementById('statusText').innerText = `Room: ${currentRoomData.room_name}`;
 
-            // 5. Load Initial Canvas Image
             loadSavedCanvas();
 
-            // 6. Connect Realtime
             roomChannel = db.channel(`room_${currentRoomCode}`);
             
-            roomChannel.on('broadcast', { event: 'draw' }, (payload) => {
+            roomChannel.on('broadcast', { event: 'draw' }, (p) => {
                 if (isBanned) return;
-                const d = payload.payload;
-                dCtx.strokeStyle = d.color; dCtx.fillStyle = d.color; dCtx.lineWidth = d.size || 5;
-
-                if (d.tool === 'pencil') {
-                    dCtx.beginPath(); dCtx.moveTo(d.x0, d.y0); dCtx.lineTo(d.x1, d.y1); dCtx.stroke();
-                } else if (d.tool === 'square') {
-                    dCtx.fillRect(d.x0, d.y0, d.w, d.h);
-                } else if (d.tool === 'circle') {
-                    dCtx.beginPath(); dCtx.arc(d.x0, d.y0, d.r, 0, 2 * Math.PI); dCtx.fill();
-                } else if (d.tool === 'text') {
-                    dCtx.font = `${d.size || 20}px Arial`; dCtx.fillText(d.text, d.x0, d.y0);
-                }
+                const d = p.payload; dCtx.strokeStyle = d.color; dCtx.fillStyle = d.color; dCtx.lineWidth = d.size || 5;
+                if (d.tool === 'pencil') { dCtx.beginPath(); dCtx.moveTo(d.x0, d.y0); dCtx.lineTo(d.x1, d.y1); dCtx.stroke(); } 
+                else if (d.tool === 'square') { dCtx.fillRect(d.x0, d.y0, d.w, d.h); } 
+                else if (d.tool === 'circle') { dCtx.beginPath(); dCtx.arc(d.x0, d.y0, d.r, 0, 2 * Math.PI); dCtx.fill(); } 
+                else if (d.tool === 'text') { dCtx.font = `${d.size || 20}px Arial`; dCtx.fillText(d.text, d.x0, d.y0); }
             });
 
-            roomChannel.on('broadcast', { event: 'cursor' }, (payload) => {
-                const d = payload.payload;
-                activePlayers[d.id] = { name: d.name, lastSeen: Date.now() };
-                updatePlayerUI();
+            roomChannel.on('broadcast', { event: 'cursor' }, (p) => {
+                const d = p.payload; activePlayers[d.id] = { name: d.name, lastSeen: Date.now() }; updatePlayerUI();
                 if (d.id === myId) return;
-
-                let cursorEl = document.getElementById(`cursor-${d.id}`);
-                if (!cursorEl) {
-                    cursorEl = document.createElement('div');
-                    cursorEl.id = `cursor-${d.id}`;
-                    cursorEl.className = 'remote-cursor';
-                    cursorEl.innerHTML = `<div class="cursor-name">${d.name}</div><div class="cursor-pointer" style="background-color: ${d.color}"></div>`;
-                    cursorsContainer.appendChild(cursorEl);
-                } else {
-                    cursorEl.querySelector('.cursor-name').innerText = d.name;
-                }
-                cursorEl.style.left = `${d.x}px`;
-                cursorEl.style.top = `${d.y}px`;
+                let c = document.getElementById(`cursor-${d.id}`);
+                if (!c) {
+                    c = document.createElement('div'); c.id = `cursor-${d.id}`; c.className = 'remote-cursor';
+                    c.innerHTML = `<div class="cursor-name">${d.name}</div><div class="cursor-pointer" style="background-color: ${d.color}"></div>`;
+                    cursorsContainer.appendChild(c);
+                } else { c.querySelector('.cursor-name').innerText = d.name; }
+                c.style.left = `${d.x}px`; c.style.top = `${d.y}px`;
             });
 
             roomChannel.on('broadcast', { event: 'clear' }, () => dCtx.clearRect(0, 0, drawingCanvas.width, drawingCanvas.height));
@@ -541,21 +499,38 @@
                 const { id, name } = p.payload;
                 delete activePlayers[id];
                 if (id === myId || (name && name.toLowerCase() === myName.toLowerCase())) {
-                    isBanned = true; document.getElementById('banOverlay').classList.remove('hidden');
+                    isBanned = true; 
+                    if (roomChannel) { db.removeChannel(roomChannel); roomChannel = null; } // INSTANT DISCONNECT
+                    document.getElementById('banOverlay').classList.remove('hidden');
                 }
+            });
+
+            roomChannel.on('broadcast', { event: 'settings_updated' }, (p) => {
+                const { name, w, h } = p.payload;
+                currentRoomData.room_name = name;
+                document.getElementById('statusText').innerText = `Room: ${name}`;
+                resizeCanvasLogic(w, h, true);
             });
 
             roomChannel.subscribe();
 
-            // Setup Cursor Broadcaster
             window.addEventListener('mousemove', (e) => {
                 if (isBanned || !roomChannel) return;
-                const pos = getMousePos(e); // Safe coords
-                roomChannel.send({
-                    type: 'broadcast', event: 'cursor',
-                    payload: { id: myId, name: myName, x: pos.x, y: pos.y, color: colorPicker.value }
-                });
+                const pos = getMousePos(e);
+                roomChannel.send({ type: 'broadcast', event: 'cursor', payload: { id: myId, name: myName, x: pos.x, y: pos.y, color: colorPicker.value } });
             });
+        }
+
+        function resizeCanvasLogic(w, h, keepArt = false) {
+            let temp;
+            if (keepArt) temp = dCtx.getImageData(0, 0, drawingCanvas.width, drawingCanvas.height);
+            
+            drawingCanvas.width = w; drawingCanvas.height = h;
+            previewCanvas.width = w; previewCanvas.height = h;
+            canvasWrapper.style.width = `${w}px`; canvasWrapper.style.height = `${h}px`;
+            dCtx.lineCap = 'round'; pCtx.lineCap = 'round';
+
+            if (keepArt && temp) dCtx.putImageData(temp, 0, 0);
         }
 
         async function loadSavedCanvas() {
@@ -569,28 +544,16 @@
 
         async function saveToCloud() {
             if (isBanned || !currentRoomCode) return;
-            const dataUrl = drawingCanvas.toDataURL(); 
-            await db.from('whiteboard').insert([{ room_code: currentRoomCode, image_data: dataUrl }]);
+            await db.from('whiteboard').insert([{ room_code: currentRoomCode, image_data: drawingCanvas.toDataURL() }]);
         }
-
-        // ==========================================
-        //  CANVAS DRAWING ENGINE (WITH COORD FIX)
-        // ==========================================
 
         function getMousePos(e) {
             const rect = previewCanvas.getBoundingClientRect();
-            // Account for any CSS scaling if applied
-            const scaleX = previewCanvas.width / rect.width;
-            const scaleY = previewCanvas.height / rect.height;
-            return {
-                x: (e.clientX - rect.left) * scaleX,
-                y: (e.clientY - rect.top) * scaleY
-            };
+            return { x: (e.clientX - rect.left) * (previewCanvas.width / rect.width), y: (e.clientY - rect.top) * (previewCanvas.height / rect.height) };
         }
 
-        let isDrawing = false;
-        let startX = 0, startY = 0, lastX = 0, lastY = 0;
-        let activeTextCoords = null;
+        let isDrawing = false, startX = 0, startY = 0, lastX = 0, lastY = 0, activeTextCoords = null;
+        const toolPicker = document.getElementById('toolPicker');
 
         toolPicker.addEventListener('change', () => {
             commitInlineText();
@@ -601,44 +564,30 @@
         previewCanvas.addEventListener('mousedown', (e) => {
             if (isBanned) return;
             const pos = getMousePos(e);
-            
-            if (toolPicker.value === 'text') {
-                spawnInlineText(pos.x, pos.y); return;
-            }
-            commitInlineText();
-            isDrawing = true; startX = pos.x; startY = pos.y; lastX = pos.x; lastY = pos.y;
+            if (toolPicker.value === 'text') { spawnInlineText(pos.x, pos.y); return; }
+            commitInlineText(); isDrawing = true; startX = pos.x; startY = pos.y; lastX = pos.x; lastY = pos.y;
         });
 
         previewCanvas.addEventListener('mousemove', (e) => {
             if (isBanned) return;
             pCtx.clearRect(0, 0, previewCanvas.width, previewCanvas.height);
             const pos = getMousePos(e);
-            const tool = toolPicker.value;
-
             if (isDrawing) {
-                if (tool === 'pencil') {
+                if (toolPicker.value === 'pencil') {
                     const penSize = parseInt(document.getElementById('pencilSizePicker').value);
                     dCtx.strokeStyle = colorPicker.value; dCtx.lineWidth = penSize;
                     dCtx.beginPath(); dCtx.moveTo(lastX, lastY); dCtx.lineTo(pos.x, pos.y); dCtx.stroke();
-                    
-                    roomChannel.send({ type: 'broadcast', event: 'draw', payload: { tool: 'pencil', x0: lastX, y0: lastY, x1: pos.x, y1: pos.y, color: colorPicker.value, size: penSize }});
+                    if(roomChannel) roomChannel.send({ type: 'broadcast', event: 'draw', payload: { tool: 'pencil', x0: lastX, y0: lastY, x1: pos.x, y1: pos.y, color: colorPicker.value, size: penSize }});
                     lastX = pos.x; lastY = pos.y;
-                } else if (tool === 'square') {
+                } else if (toolPicker.value === 'square') {
                     pCtx.strokeStyle = colorPicker.value; pCtx.fillStyle = colorPicker.value + "44"; pCtx.setLineDash([6, 6]);
                     pCtx.fillRect(startX, startY, pos.x - startX, pos.y - startY); pCtx.strokeRect(startX, startY, pos.x - startX, pos.y - startY); pCtx.setLineDash([]);
-                } else if (tool === 'circle') {
+                } else if (toolPicker.value === 'circle') {
                     pCtx.strokeStyle = colorPicker.value; pCtx.fillStyle = colorPicker.value + "44"; pCtx.setLineDash([6, 6]);
-                    const rad = Math.sqrt(Math.pow(pos.x - startX, 2) + Math.pow(pos.y - startY, 2));
-                    pCtx.beginPath(); pCtx.arc(startX, startY, rad, 0, 2 * Math.PI); pCtx.fill(); pCtx.stroke(); pCtx.setLineDash([]);
+                    pCtx.beginPath(); pCtx.arc(startX, startY, Math.sqrt(Math.pow(pos.x - startX, 2) + Math.pow(pos.y - startY, 2)), 0, 2 * Math.PI); pCtx.fill(); pCtx.stroke(); pCtx.setLineDash([]);
                 }
             } else {
-                if (tool === 'pencil') {
-                    const penSize = parseInt(document.getElementById('pencilSizePicker').value);
-                    pCtx.strokeStyle = colorPicker.value; pCtx.beginPath(); pCtx.arc(pos.x, pos.y, penSize/2, 0, 2*Math.PI); pCtx.stroke();
-                } else if (tool === 'text' && inlineTextInput.classList.contains('hidden')) {
-                    const size = parseInt(document.getElementById('textSizePicker').value);
-                    pCtx.fillStyle = colorPicker.value + "aa"; pCtx.font = `${size}px Arial`; pCtx.fillText("T", pos.x, pos.y);
-                }
+                if (toolPicker.value === 'pencil') { pCtx.strokeStyle = colorPicker.value; pCtx.beginPath(); pCtx.arc(pos.x, pos.y, parseInt(document.getElementById('pencilSizePicker').value)/2, 0, 2*Math.PI); pCtx.stroke(); }
             }
         });
 
@@ -646,47 +595,35 @@
             if (isBanned || !isDrawing) return;
             pCtx.clearRect(0, 0, previewCanvas.width, previewCanvas.height);
             const pos = getMousePos(e);
-            
             dCtx.fillStyle = colorPicker.value;
             if (toolPicker.value === 'square') {
-                const w = pos.x - startX, h = pos.y - startY;
-                dCtx.fillRect(startX, startY, w, h);
-                roomChannel.send({ type: 'broadcast', event: 'draw', payload: { tool: 'square', x0: startX, y0: startY, w, h, color: colorPicker.value }});
+                dCtx.fillRect(startX, startY, pos.x - startX, pos.y - startY);
+                if(roomChannel) roomChannel.send({ type: 'broadcast', event: 'draw', payload: { tool: 'square', x0: startX, y0: startY, w: pos.x - startX, h: pos.y - startY, color: colorPicker.value }});
             } else if (toolPicker.value === 'circle') {
-                const rad = Math.sqrt(Math.pow(pos.x - startX, 2) + Math.pow(pos.y - startY, 2));
-                dCtx.beginPath(); dCtx.arc(startX, startY, rad, 0, 2 * Math.PI); dCtx.fill();
-                roomChannel.send({ type: 'broadcast', event: 'draw', payload: { tool: 'circle', x0: startX, y0: startY, r: rad, color: colorPicker.value }});
+                const rad = Math.sqrt(Math.pow(pos.x - startX, 2) + Math.pow(pos.y - startY, 2)); dCtx.beginPath(); dCtx.arc(startX, startY, rad, 0, 2 * Math.PI); dCtx.fill();
+                if(roomChannel) roomChannel.send({ type: 'broadcast', event: 'draw', payload: { tool: 'circle', x0: startX, y0: startY, r: rad, color: colorPicker.value }});
             }
             isDrawing = false; saveToCloud();
         });
 
-        // ==========================================
-        // TEXT TOOL LOGIC
-        // ==========================================
         function spawnInlineText(x, y) {
-            commitInlineText();
-            const size = parseInt(document.getElementById('textSizePicker').value);
-            activeTextCoords = { x, y };
-            inlineTextInput.style.left = `${x}px`; inlineTextInput.style.top = `${y - size * 0.8}px`;
-            inlineTextInput.style.fontSize = `${size}px`; inlineTextInput.style.color = colorPicker.value;
+            commitInlineText(); const size = parseInt(document.getElementById('textSizePicker').value); activeTextCoords = { x, y };
+            inlineTextInput.style.left = `${x}px`; inlineTextInput.style.top = `${y - size * 0.8}px`; inlineTextInput.style.fontSize = `${size}px`; inlineTextInput.style.color = colorPicker.value;
             inlineTextInput.value = ''; inlineTextInput.classList.remove('hidden'); inlineTextInput.focus();
         }
         function commitInlineText() {
             if (!activeTextCoords || inlineTextInput.classList.contains('hidden')) return;
-            const txt = inlineTextInput.value.trim();
-            const size = parseInt(document.getElementById('textSizePicker').value);
+            const txt = inlineTextInput.value.trim(), size = parseInt(document.getElementById('textSizePicker').value);
             if (txt && !isBanned) {
                 dCtx.fillStyle = colorPicker.value; dCtx.font = `${size}px Arial`; dCtx.fillText(txt, activeTextCoords.x, activeTextCoords.y);
-                roomChannel.send({ type: 'broadcast', event: 'draw', payload: { tool: 'text', x0: activeTextCoords.x, y0: activeTextCoords.y, text: txt, color: colorPicker.value, size }});
+                if(roomChannel) roomChannel.send({ type: 'broadcast', event: 'draw', payload: { tool: 'text', x0: activeTextCoords.x, y0: activeTextCoords.y, text: txt, color: colorPicker.value, size }});
                 saveToCloud();
             }
             inlineTextInput.classList.add('hidden'); activeTextCoords = null;
         }
         inlineTextInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') commitInlineText(); if (e.key === 'Escape') inlineTextInput.classList.add('hidden'); });
 
-        // ==========================================
         // ADMIN PANEL
-        // ==========================================
         const adminModal = document.getElementById('adminModal');
         const adminLoginBox = document.getElementById('adminLoginBox');
         const adminDashboardBox = document.getElementById('adminDashboardBox');
@@ -701,19 +638,41 @@
             if (document.getElementById('adminPasswordInput').value === currentRoomData.admin_password) {
                 adminLoginBox.classList.add('hidden'); adminDashboardBox.classList.remove('hidden');
                 document.getElementById('adminPasswordInput').value = '';
+                
+                document.getElementById('editRoomName').value = currentRoomData.room_name;
+                document.getElementById('editRoomWidth').value = currentRoomData.width;
+                document.getElementById('editRoomHeight').value = currentRoomData.height;
+                document.getElementById('editRoomVisibility').value = currentRoomData.is_public ? 'public' : 'private';
+
                 updatePlayerUI(); fetchBans();
             } else { alert("Incorrect Admin Password for this room!"); }
         });
 
         document.getElementById('adminClearBtn').addEventListener('click', () => {
             dCtx.clearRect(0, 0, drawingCanvas.width, drawingCanvas.height); saveToCloud();
-            roomChannel.send({ type: 'broadcast', event: 'clear' });
+            if(roomChannel) roomChannel.send({ type: 'broadcast', event: 'clear' });
         });
 
         document.getElementById('adminFillBtn').addEventListener('click', () => {
-            const c = document.getElementById('fillColorPicker').value;
-            dCtx.fillStyle = c; dCtx.fillRect(0, 0, drawingCanvas.width, drawingCanvas.height); saveToCloud();
-            roomChannel.send({ type: 'broadcast', event: 'fill', payload: { c } });
+            const c = document.getElementById('fillColorPicker').value; dCtx.fillStyle = c; dCtx.fillRect(0, 0, drawingCanvas.width, drawingCanvas.height); saveToCloud();
+            if(roomChannel) roomChannel.send({ type: 'broadcast', event: 'fill', payload: { c } });
+        });
+
+        document.getElementById('saveRoomSettingsBtn').addEventListener('click', async () => {
+            const newName = document.getElementById('editRoomName').value.trim();
+            const newW = parseInt(document.getElementById('editRoomWidth').value);
+            const newH = parseInt(document.getElementById('editRoomHeight').value);
+            const isPub = document.getElementById('editRoomVisibility').value === 'public';
+
+            const { error } = await db.from('rooms').update({ room_name: newName, width: newW, height: newH, is_public: isPub }).eq('room_code', currentRoomCode);
+            if(error) { alert("Failed to update: " + error.message); } 
+            else {
+                currentRoomData.room_name = newName; currentRoomData.width = newW; currentRoomData.height = newH;
+                document.getElementById('statusText').innerText = `Room: ${newName}`;
+                resizeCanvasLogic(newW, newH, true);
+                if(roomChannel) roomChannel.send({ type: 'broadcast', event: 'settings_updated', payload: { name: newName, w: newW, h: newH }});
+                alert("Room settings updated successfully!");
+            }
         });
 
         function updatePlayerUI() {
@@ -741,25 +700,22 @@
         window.banUser = async (id, name) => {
             if (confirm(`Ban ${name} from this room?`)) {
                 await db.from('banned_users').insert([{ room_code: currentRoomCode, user_id: id, user_name: name }]);
-                roomChannel.send({ type: 'broadcast', event: 'ban', payload: { id, name } });
+                if(roomChannel) roomChannel.send({ type: 'broadcast', event: 'ban', payload: { id, name } });
                 fetchBans(); updatePlayerUI();
             }
         };
 
         window.unbanUser = async (id) => {
             if (confirm("Unban user?")) {
-                await db.from('banned_users').delete().eq('room_code', currentRoomCode).eq('user_id', id);
-                fetchBans();
+                await db.from('banned_users').delete().eq('room_code', currentRoomCode).eq('user_id', id); fetchBans();
             }
         };
 
-        // Clean stale players
         setInterval(() => {
             const now = Date.now();
             Object.keys(activePlayers).forEach(id => {
                 if (now - activePlayers[id].lastSeen > 8000) {
-                    delete activePlayers[id];
-                    const cur = document.getElementById(`cursor-${id}`); if(cur) cur.remove();
+                    delete activePlayers[id]; const cur = document.getElementById(`cursor-${id}`); if(cur) cur.remove();
                 }
             });
             if (!adminDashboardBox.classList.contains('hidden')) updatePlayerUI();
