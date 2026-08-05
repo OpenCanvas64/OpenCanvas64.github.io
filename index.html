@@ -223,6 +223,7 @@
             <h1>🚫 YOU ARE BANNED</h1>
             <p>An administrator has removed you from this canvas room.</p>
             <p style="font-size: 12px; opacity: 0.8;">Drawing and room access have been disabled.</p>
+            <button id="manualUnbanCheckBtn" style="margin-top: 15px; background: #ffffff; color: #b40000;">Check If Unbanned</button>
         </div>
     </div>
 
@@ -254,6 +255,7 @@
             
             <div style="display: flex; gap: 8px;">
                 <button id="adminClearBtn" class="danger-btn" style="flex: 1;">Clear Canvas</button>
+                <button id="adminClearBansBtn" class="secondary-btn" style="flex: 1; background: #ff9800;">Clear All Bans</button>
             </div>
 
             <hr style="width: 100%; border: 0; border-top: 1px solid #ddd; margin: 4px 0;">
@@ -307,6 +309,7 @@
         const pingDisplay = document.getElementById('pingDisplay');
 
         const banOverlay = document.getElementById('banOverlay');
+        const manualUnbanCheckBtn = document.getElementById('manualUnbanCheckBtn');
         const startMenuModal = document.getElementById('startMenuModal');
         const modalTitle = document.getElementById('modalTitle');
         const nameInput = document.getElementById('nameInput');
@@ -325,6 +328,7 @@
         const closeAdminDashBtn = document.getElementById('closeAdminDashBtn');
 
         const adminClearBtn = document.getElementById('adminClearBtn');
+        const adminClearBansBtn = document.getElementById('adminClearBansBtn');
         const adminFillBtn = document.getElementById('adminFillBtn');
         const fillColorPicker = document.getElementById('fillColorPicker');
         const playerListContainer = document.getElementById('playerListContainer');
@@ -373,6 +377,23 @@
             statusText.innerText = "Banned";
             statusText.style.color = "#ff4444";
         }
+
+        function forceUnbanMe() {
+            isBanned = false;
+            localStorage.removeItem('canvas_banned');
+            delete bannedPlayers[myId];
+            localStorage.setItem('canvas_banned_map', JSON.stringify(bannedPlayers));
+            banOverlay.classList.add('hidden');
+            location.reload();
+        }
+
+        manualUnbanCheckBtn.addEventListener('click', () => {
+            if (!bannedPlayers[myId]) {
+                forceUnbanMe();
+            } else {
+                alert("You are still in the admin's banned list!");
+            }
+        });
 
         function isNameOrIdBanned(id, name) {
             if (bannedPlayers[id]) return true;
@@ -524,7 +545,7 @@
             });
 
             room.on('broadcast', { event: 'unban_player' }, (payload) => {
-                const { id, updatedBannedMap } = payload.payload;
+                const { id, targetName, updatedBannedMap } = payload.payload;
 
                 if (updatedBannedMap) {
                     bannedPlayers = updatedBannedMap;
@@ -533,13 +554,11 @@
                 }
                 localStorage.setItem('canvas_banned_map', JSON.stringify(bannedPlayers));
 
-                if (id === myId || !bannedPlayers[myId]) {
-                    isBanned = false;
-                    localStorage.removeItem('canvas_banned');
-                    banOverlay.classList.add('hidden');
-                    
-                    alert("An administrator has unbanned you. Rejoining...");
-                    location.reload();
+                const isMeById = id === myId;
+                const isMeByName = targetName && myName.toLowerCase() === targetName.toLowerCase();
+
+                if (isMeById || isMeByName || !bannedPlayers[myId]) {
+                    forceUnbanMe();
                 }
 
                 updateBannedListUI();
@@ -610,6 +629,21 @@
             const blankCanvas = canvas.toDataURL();
             await db.from('whiteboard').insert([{ image_data: blankCanvas }]);
             if (room) room.send({ type: 'broadcast', event: 'clear_board' });
+        });
+
+        adminClearBansBtn.addEventListener('click', () => {
+            if (confirm("Reset and unban ALL players?")) {
+                bannedPlayers = {};
+                localStorage.removeItem('canvas_banned_map');
+                if (room) {
+                    room.send({
+                        type: 'broadcast',
+                        event: 'unban_player',
+                        payload: { id: 'ALL', targetName: '', updatedBannedMap: {} }
+                    });
+                }
+                updateBannedListUI();
+            }
         });
 
         adminFillBtn.addEventListener('click', async () => {
@@ -699,7 +733,7 @@
                     room.send({ 
                         type: 'broadcast', 
                         event: 'unban_player', 
-                        payload: { id: targetId, updatedBannedMap: bannedPlayers } 
+                        payload: { id: targetId, targetName: targetName, updatedBannedMap: bannedPlayers } 
                     });
                 }
 
