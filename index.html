@@ -256,6 +256,30 @@
         let activePlayers = {}; 
         let isBanned = false, isMuted = false;
         
+        // Throttled Canvas Saver
+        let saveTimeout = null;
+        function triggerCanvasSave() {
+            clearTimeout(saveTimeout);
+            saveTimeout = setTimeout(async () => {
+                if (!currentRoomId) return;
+                try {
+                    // Export as compressed JPEG to avoid DB / Realtime message size limits
+                    const dataUrl = drawingCanvas.toDataURL('image/jpeg', 0.7);
+                    
+                    const { error } = await db.from('whiteboard').upsert(
+                        { room_id: currentRoomId, image_data: dataUrl }, 
+                        { onConflict: 'room_id' }
+                    );
+                    if (error) {
+                        // Fallback insert if upsert conflict key isn't strictly set
+                        await db.from('whiteboard').insert([{ room_id: currentRoomId, image_data: dataUrl }]);
+                    }
+                } catch (e) {
+                    console.error("Canvas autosave error:", e);
+                }
+            }, 1500);
+        }
+
         // Load and sanitize Recent Rooms
         let recentRooms = [];
         try {
@@ -419,18 +443,25 @@
 
             drawingCanvas.width = roomData.width; drawingCanvas.height = roomData.height; previewCanvas.width = roomData.width; previewCanvas.height = roomData.height;
             document.getElementById('canvasWrapper').style.width = `${roomData.width}px`; document.getElementById('canvasWrapper').style.height = `${roomData.height}px`;
+            
+            // Default canvas background to white
+            dCtx.fillStyle = '#ffffff';
+            dCtx.fillRect(0, 0, drawingCanvas.width, drawingCanvas.height);
             dCtx.lineCap = 'round'; pCtx.lineCap = 'round';
 
             lobbyView.classList.add('hidden'); mainAppView.classList.remove('hidden');
             document.getElementById('statusText').innerText = isDev ? `🛠️ Dev View: ${roomData.room_name}` : `Room: ${roomData.room_name}`;
             if (isDev) document.getElementById('openAdminBtn').classList.add('dev-btn');
 
-            // Load latest saved artwork from database
+            // Load latest saved canvas image from database
             try {
                 const { data: art } = await db.from('whiteboard').select('image_data').eq('room_id', currentRoomId).order('created_at', { ascending: false }).limit(1);
                 if (art && art.length && art[0].image_data) { 
                     const img = new Image(); 
-                    img.onload = () => dCtx.drawImage(img, 0, 0); 
+                    img.onload = () => {
+                        dCtx.clearRect(0, 0, drawingCanvas.width, drawingCanvas.height);
+                        dCtx.drawImage(img, 0, 0);
+                    };
                     img.src = art[0].image_data; 
                 }
             } catch(e) {}
@@ -464,13 +495,14 @@
                 c.style.left = `${d.x}px`; c.style.top = `${d.y}px`;
             });
 
-            // Live Peer Canvas Sync Protocol (Fixes blank canvas on rejoining)
+            // Live Canvas Sync Protocol (Uses compressed JPEG string to fit payload size)
             roomChannel.on('broadcast', { event: 'request_canvas_sync' }, (p) => {
                 if (p.payload.requesterId !== myId) {
+                    const compressedData = drawingCanvas.toDataURL('image/jpeg', 0.6);
                     roomChannel.send({
                         type: 'broadcast',
                         event: 'canvas_sync_data',
-                        payload: { targetId: p.payload.requesterId, image_data: drawingCanvas.toDataURL() }
+                        payload: { targetId: p.payload.requesterId, image_data: compressedData }
                     });
                 }
             });
@@ -478,7 +510,10 @@
             roomChannel.on('broadcast', { event: 'canvas_sync_data' }, (p) => {
                 if (p.payload.targetId === myId && p.payload.image_data) {
                     const img = new Image();
-                    img.onload = () => dCtx.drawImage(img, 0, 0);
+                    img.onload = () => {
+                        dCtx.clearRect(0, 0, drawingCanvas.width, drawingCanvas.height);
+                        dCtx.drawImage(img, 0, 0);
+                    };
                     img.src = p.payload.image_data;
                 }
             });
@@ -493,8 +528,16 @@
                 }
             });
 
-            roomChannel.on('broadcast', { event: 'clear' }, () => dCtx.clearRect(0, 0, drawingCanvas.width, drawingCanvas.height));
-            roomChannel.on('broadcast', { event: 'fill' }, (p) => { dCtx.fillStyle = p.payload.c; dCtx.fillRect(0, 0, drawingCanvas.width, drawingCanvas.height); });
+            roomChannel.on('broadcast', { event: 'clear' }, () => {
+                dCtx.fillStyle = '#ffffff';
+                dCtx.fillRect(0, 0, drawingCanvas.width, drawingCanvas.height);
+            });
+            
+            roomChannel.on('broadcast', { event: 'fill' }, (p) => { 
+                dCtx.fillStyle = p.payload.c; 
+                dCtx.fillRect(0, 0, drawingCanvas.width, drawingCanvas.height); 
+            });
+            
             roomChannel.on('broadcast', { event: 'room_deleted' }, () => { alert("Room was deleted."); location.reload(); });
             
             roomChannel.on('broadcast', { event: 'punish' }, (p) => {
@@ -513,7 +556,6 @@
 
             roomChannel.subscribe((status) => {
                 if (status === 'SUBSCRIBED') {
-                    // Ask connected peers for the live canvas state upon joining
                     setTimeout(() => {
                         roomChannel.send({ type: 'broadcast', event: 'request_canvas_sync', payload: { requesterId: myId } });
                     }, 500);
@@ -550,14 +592,15 @@
                 
                 if (cmd === '/clear') {
                     if (isDev || localStorage.getItem(`admin_${currentRoomId}`) === 'true') {
-                        dCtx.clearRect(0, 0, drawingCanvas.width, drawingCanvas.height);
+                        dCtx.fillStyle = '#ffffff';
+                        dCtx.fillRect(0, 0, drawingCanvas.width, drawingCanvas.height);
                         roomChannel.send({ type: 'broadcast', event: 'clear' });
+                        triggerCanvasSave();
                         appendChat("Canvas cleared.", 'system');
                     } else appendChat("You do not have permission to use /clear.", 'system');
                     return;
                 }
 
-                // NEW: /msg command
                 if (cmd === '/msg' || cmd === '/whisper') {
                     const spaceIdx = msg.indexOf(' ');
                     if (spaceIdx === -1) return appendChat("[System]: Usage: /msg <User> <Message>", 'system');
@@ -585,7 +628,6 @@
                     return;
                 }
 
-                // NEW: /ban command
                 if (cmd === '/ban') {
                     const isAdmin = isDev || localStorage.getItem(`admin_${currentRoomId}`) === 'true';
                     if (!isAdmin) return appendChat("[System]: You do not have permission to use /ban.", 'system');
@@ -608,7 +650,7 @@
 
                     let targetId = Object.keys(activePlayers).find(id => activePlayers[id].name.toLowerCase() === targetNameInput.toLowerCase());
                     const targetName = targetId ? activePlayers[targetId].name : targetNameInput;
-                    if (!targetId) targetId = targetNameInput; // Fallback to name if user left
+                    if (!targetId) targetId = targetNameInput;
 
                     const expires = mins ? new Date(Date.now() + mins * 60000).toISOString() : null;
                     const finalReason = reason.trim() || 'No reason provided';
@@ -643,7 +685,7 @@
             appendChat(`[${globalNameInput.value}]: ${msg}`);
         });
 
-        // --- DRAWING LOGIC (MUTES BLOCK DRAWING) ---
+        // --- DRAWING LOGIC ---
         let isDrawing = false, startX = 0, startY = 0, lastX = 0, lastY = 0;
         function getMouse(e) { const r = previewCanvas.getBoundingClientRect(); return { x: (e.clientX - r.left) * (previewCanvas.width / r.width), y: (e.clientY - r.top) * (previewCanvas.height / r.height) }; }
         
@@ -668,6 +710,7 @@
                 if(txt) {
                     dCtx.fillStyle = c; dCtx.font = `${sz}px Arial`; dCtx.fillText(txt, ti.dataset.x, ti.dataset.y);
                     roomChannel.send({ type: 'broadcast', event: 'draw', payload: { tool: 'text', x0: ti.dataset.x, y0: ti.dataset.y, text: txt, color: c, size: sz }});
+                    triggerCanvasSave();
                 }
                 ti.value = ''; ti.classList.add('hidden');
             }
@@ -692,7 +735,10 @@
             const pos = getMouse(e), t = document.getElementById('toolPicker').value, c = document.getElementById('colorPicker').value; dCtx.fillStyle = c;
             if (t === 'square') { dCtx.fillRect(startX, startY, pos.x - startX, pos.y - startY); roomChannel.send({ type: 'broadcast', event: 'draw', payload: { tool: 'square', x0: startX, y0: startY, w: pos.x - startX, h: pos.y - startY, color: c }}); }
             if (t === 'circle') { const r = Math.sqrt(Math.pow(pos.x-startX,2)+Math.pow(pos.y-startY,2)); dCtx.beginPath(); dCtx.arc(startX, startY, r, 0, 2*Math.PI); dCtx.fill(); roomChannel.send({ type: 'broadcast', event: 'draw', payload: { tool: 'circle', x0: startX, y0: startY, r, color: c }}); }
-            isDrawing = false; db.from('whiteboard').insert([{ room_id: currentRoomId, image_data: drawingCanvas.toDataURL() }]);
+            isDrawing = false; 
+            
+            // Trigger throttled DB save to avoid spam and persistence failure
+            triggerCanvasSave();
         });
 
         // --- ADMIN PANEL LOGIC ---
@@ -734,17 +780,18 @@
         });
 
         document.getElementById('adminClearBtn').addEventListener('click', async () => {
-            dCtx.clearRect(0, 0, drawingCanvas.width, drawingCanvas.height); 
-            await db.from('whiteboard').insert([{ room_id: currentRoomId, image_data: drawingCanvas.toDataURL() }]);
+            dCtx.fillStyle = '#ffffff';
+            dCtx.fillRect(0, 0, drawingCanvas.width, drawingCanvas.height);
             if(roomChannel) roomChannel.send({ type: 'broadcast', event: 'clear' });
+            triggerCanvasSave();
         });
 
         document.getElementById('adminFillBtn').addEventListener('click', async () => {
             const c = document.getElementById('fillColorPicker').value; 
             dCtx.fillStyle = c; 
             dCtx.fillRect(0, 0, drawingCanvas.width, drawingCanvas.height); 
-            await db.from('whiteboard').insert([{ room_id: currentRoomId, image_data: drawingCanvas.toDataURL() }]);
             if(roomChannel) roomChannel.send({ type: 'broadcast', event: 'fill', payload: { c } });
+            triggerCanvasSave();
         });
 
         document.getElementById('saveRoomSettingsBtn').addEventListener('click', async () => {
