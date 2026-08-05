@@ -1,22 +1,471 @@
-// --- REPLACE THE PING LOGIC IN YOUR SCRIPT WITH THIS ---
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Multiplayer Canvas - Supabase Edition</title>
+    <link rel="icon" type="image/x-icon" href="favicon.ico">
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #f0f0f0;
+            font-family: sans-serif;
+        }
+        
+        #toolbar {
+            position: absolute;
+            top: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.85);
+            padding: 8px 18px;
+            border-radius: 8px;
+            z-index: 100;
+            display: flex;
+            gap: 12px;
+            align-items: center;
+            color: white;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+        }
+        
+        .tool-group {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
 
-function measurePing() {
-    const startTime = performance.now();
-    
-    // Ping Supabase REST endpoint directly
-    fetch(`${supabaseUrl}/rest/v1/`, {
-        method: 'HEAD',
-        headers: { 'apikey': supabaseKey }
-    })
-    .then(() => {
-        const latency = Math.round(performance.now() - startTime);
-        pingDisplay.innerText = `Ping: ${latency} ms`;
-    })
-    .catch(() => {
-        pingDisplay.innerText = `Ping: Error`;
-    });
-}
+        button, select, input[type="color"], input[type="text"] {
+            padding: 6px 10px;
+            border-radius: 4px;
+            border: none;
+            outline: none;
+            font-size: 14px;
+        }
 
-// Measure immediately and update every 3 seconds
-measurePing();
-setInterval(measurePing, 3000);
+        button {
+            cursor: pointer;
+            background-color: #4CAF50;
+            color: white;
+            font-weight: bold;
+        }
+
+        button.danger-btn {
+            background-color: #f44336;
+        }
+
+        canvas {
+            background-color: #ffffff;
+            cursor: crosshair;
+            position: absolute;
+            top: 0;
+            left: 0;
+        }
+
+        .remote-cursor {
+            position: absolute;
+            pointer-events: none;
+            z-index: 50;
+            transition: top 0.05s linear, left 0.05s linear;
+        }
+        
+        .cursor-pointer {
+            width: 14px;
+            height: 14px;
+            background-color: red;
+            border-radius: 50%;
+            border: 2px solid white;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.4);
+            transform: translate(-50%, -50%);
+        }
+        
+        .cursor-name {
+            position: absolute;
+            top: -24px;
+            left: -10px;
+            background: rgba(0,0,0,0.8);
+            color: white;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 11px;
+            white-space: nowrap;
+        }
+
+        /* Ping Badge */
+        #pingDisplay {
+            position: absolute;
+            bottom: 8px;
+            right: 12px;
+            background: rgba(0, 0, 0, 0.6);
+            color: #00ff66;
+            font-family: monospace;
+            font-size: 11px;
+            padding: 3px 8px;
+            border-radius: 4px;
+            z-index: 100;
+            pointer-events: none;
+            user-select: none;
+        }
+
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: rgba(0,0,0,0.6);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+
+        .modal-box {
+            background: white;
+            padding: 24px;
+            border-radius: 8px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            width: 300px;
+            color: #222;
+        }
+
+        .hidden {
+            display: none !important;
+        }
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+
+    <div id="toolbar">
+        <div class="tool-group">
+            <label>Color:</label>
+            <input type="color" id="colorPicker" value="#000000">
+        </div>
+        <div class="tool-group">
+            <label>Tool:</label>
+            <select id="toolPicker">
+                <option value="pencil">Pencil</option>
+                <option value="square">Square</option>
+                <option value="circle">Circle</option>
+                <option value="text">Text</option>
+            </select>
+        </div>
+        <button id="clearBtn" class="danger-btn">Clear Canvas</button>
+        <div class="tool-group" id="statusText" style="color: #ffaa00; margin-left: 8px;">
+            Connecting...
+        </div>
+    </div>
+
+    <canvas id="drawingCanvas"></canvas>
+
+    <div id="cursorsContainer"></div>
+
+    <div id="pingDisplay">Ping: -- ms</div>
+
+    <div id="nameModal" class="modal-overlay">
+        <div class="modal-box">
+            <h3>Enter Your Display Name</h3>
+            <input type="text" id="nameInput" placeholder="Name..." value="Anonymous">
+            <button id="joinBtn">Join Room</button>
+        </div>
+    </div>
+
+    <div id="textModal" class="modal-overlay hidden">
+        <div class="modal-box">
+            <h3>Add Text to Canvas</h3>
+            <input type="text" id="canvasTextInput" placeholder="Type text here...">
+            <div style="display: flex; gap: 8px; justify-content: flex-end;">
+                <button id="cancelTextBtn" style="background: #888;">Cancel</button>
+                <button id="submitTextBtn">Place Text</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- 1. SUPABASE CREDENTIALS ---
+        const supabaseUrl = 'https://uyvlsurevydjaxxnlyxh.supabase.co';
+        const supabaseKey = 'sb_publishable_XTu1_XJMCZdkYJgeOqJjKw_MgmnLvF9'; 
+        const db = window.supabase.createClient(supabaseUrl, supabaseKey);
+
+        // --- 2. ELEMENT SETUP ---
+        const canvas = document.getElementById('drawingCanvas');
+        const ctx = canvas.getContext('2d');
+        const statusText = document.getElementById('statusText');
+        const colorPicker = document.getElementById('colorPicker');
+        const toolPicker = document.getElementById('toolPicker');
+        const cursorsContainer = document.getElementById('cursorsContainer');
+        const clearBtn = document.getElementById('clearBtn');
+        const pingDisplay = document.getElementById('pingDisplay');
+
+        const nameModal = document.getElementById('nameModal');
+        const nameInput = document.getElementById('nameInput');
+        const joinBtn = document.getElementById('joinBtn');
+        const textModal = document.getElementById('textModal');
+        const canvasTextInput = document.getElementById('canvasTextInput');
+        const submitTextBtn = document.getElementById('submitTextBtn');
+        const cancelTextBtn = document.getElementById('cancelTextBtn');
+
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+        ctx.lineCap = 'round';
+
+        let myName = localStorage.getItem('canvas_user_name') || "Anonymous";
+        let myId = Math.random().toString(36).substr(2, 9);
+        let room;
+
+        let isDrawing = false;
+        let startX = 0, startY = 0;
+        let lastX = 0, lastY = 0;
+        let pendingTextCoords = { x: 0, y: 0 };
+
+        // Auto-join if user has saved name
+        if (localStorage.getItem('canvas_user_name')) {
+            nameInput.value = localStorage.getItem('canvas_user_name');
+            nameModal.classList.add('hidden');
+            initMultiplayer();
+        }
+
+        // --- 3. PING LOGIC (REST API HEAD REQUEST) ---
+        function measurePing() {
+            const startTime = performance.now();
+            fetch(`${supabaseUrl}/rest/v1/`, {
+                method: 'HEAD',
+                headers: { 'apikey': supabaseKey }
+            })
+            .then(() => {
+                const latency = Math.round(performance.now() - startTime);
+                pingDisplay.innerText = `Ping: ${latency} ms`;
+            })
+            .catch(() => {
+                pingDisplay.innerText = `Ping: Error`;
+            });
+        }
+
+        measurePing();
+        setInterval(measurePing, 3000);
+
+        // --- 4. MULTIPLAYER SETUP ---
+        joinBtn.addEventListener('click', () => {
+            myName = nameInput.value.trim() || "Anonymous";
+            localStorage.setItem('canvas_user_name', myName);
+            nameModal.classList.add('hidden');
+            initMultiplayer();
+        });
+
+        function initMultiplayer() {
+            if (room) return;
+
+            room = db.channel('global_whiteboard');
+
+            room.on('broadcast', { event: 'draw' }, (payload) => {
+                const d = payload.payload;
+                ctx.strokeStyle = d.color;
+                ctx.fillStyle = d.color;
+                ctx.lineWidth = 5;
+
+                if (d.tool === 'pencil') {
+                    ctx.beginPath(); ctx.moveTo(d.x0, d.y0); ctx.lineTo(d.x1, d.y1); ctx.stroke();
+                } else if (d.tool === 'square') {
+                    ctx.fillRect(d.x0, d.y0, d.w, d.h);
+                } else if (d.tool === 'circle') {
+                    ctx.beginPath(); ctx.arc(d.x0, d.y0, d.r, 0, 2 * Math.PI); ctx.fill();
+                } else if (d.tool === 'text') {
+                    ctx.font = "20px Arial"; ctx.fillText(d.text, d.x0, d.y0);
+                }
+            });
+
+            room.on('broadcast', { event: 'cursor' }, (payload) => {
+                const d = payload.payload;
+                
+                // Skip self-cursor
+                if (d.id === myId) return;
+
+                let cursorEl = document.getElementById(`cursor-${d.id}`);
+                
+                if (!cursorEl) {
+                    cursorEl = document.createElement('div');
+                    cursorEl.id = `cursor-${d.id}`;
+                    cursorEl.className = 'remote-cursor';
+                    cursorEl.innerHTML = `
+                        <div class="cursor-name">${d.name}</div>
+                        <div class="cursor-pointer" style="background-color: ${d.color}"></div>
+                    `;
+                    cursorsContainer.appendChild(cursorEl);
+                }
+                
+                cursorEl.style.left = `${d.x}px`;
+                cursorEl.style.top = `${d.y}px`;
+            });
+
+            room.on('broadcast', { event: 'clear_board' }, () => {
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+            });
+
+            room.subscribe();
+
+            window.addEventListener('mousemove', (e) => {
+                if (room) {
+                    room.send({
+                        type: 'broadcast',
+                        event: 'cursor',
+                        payload: { id: myId, name: myName, x: e.clientX, y: e.clientY, color: colorPicker.value }
+                    });
+                }
+            });
+
+            loadSavedCanvas();
+        }
+
+        // --- 5. DATA LOGIC ---
+        async function loadSavedCanvas() {
+            const { data } = await db
+                .from('whiteboard')
+                .select('image_data')
+                .order('id', { ascending: false })
+                .limit(1);
+
+            if (data && data.length > 0 && data[0].image_data) {
+                const img = new Image();
+                img.onload = () => {
+                    ctx.drawImage(img, 0, 0);
+                    statusText.innerText = `Connected as ${myName}`;
+                    statusText.style.color = "#44ff44";
+                };
+                img.src = data[0].image_data;
+            } else {
+                statusText.innerText = `Connected as ${myName}`;
+                statusText.style.color = "#44ff44";
+            }
+        }
+
+        async function saveToCloud() {
+            const canvasData = canvas.toDataURL(); 
+            await db.from('whiteboard').insert([{ image_data: canvasData }]);
+        }
+
+        async function executeClear() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            const blankCanvas = canvas.toDataURL();
+            await db.from('whiteboard').insert([{ image_data: blankCanvas }]);
+
+            if (room) {
+                room.send({ type: 'broadcast', event: 'clear_board' });
+            }
+        }
+
+        clearBtn.addEventListener('click', () => executeClear());
+
+        window.clear = {
+            canvas: (code) => {
+                if (code === "code=Admin2341") executeClear();
+            }
+        };
+
+        // --- 6. DRAWING LOGIC ---
+        canvas.addEventListener('mousedown', (e) => {
+            isDrawing = true;
+            startX = e.clientX;
+            startY = e.clientY;
+            lastX = e.clientX;
+            lastY = e.clientY;
+
+            if (toolPicker.value === 'text') {
+                isDrawing = false;
+                pendingTextCoords = { x: startX, y: startY };
+                canvasTextInput.value = '';
+                textModal.classList.remove('hidden');
+                canvasTextInput.focus();
+            }
+        });
+
+        submitTextBtn.addEventListener('click', () => {
+            const userInput = canvasTextInput.value.trim();
+            if (userInput) {
+                ctx.fillStyle = colorPicker.value;
+                ctx.font = "20px Arial";
+                ctx.fillText(userInput, pendingTextCoords.x, pendingTextCoords.y);
+                
+                room.send({
+                    type: 'broadcast', event: 'draw',
+                    payload: { tool: 'text', x0: pendingTextCoords.x, y0: pendingTextCoords.y, text: userInput, color: colorPicker.value }
+                });
+                saveToCloud();
+            }
+            textModal.classList.add('hidden');
+        });
+
+        cancelTextBtn.addEventListener('click', () => textModal.classList.add('hidden'));
+
+        canvas.addEventListener('mousemove', (e) => {
+            if (!isDrawing) return;
+            const tool = toolPicker.value;
+
+            if (tool === 'pencil') {
+                ctx.strokeStyle = colorPicker.value;
+                ctx.lineWidth = 5;
+                ctx.beginPath();
+                ctx.moveTo(lastX, lastY);
+                ctx.lineTo(e.clientX, e.clientY);
+                ctx.stroke();
+
+                room.send({
+                    type: 'broadcast', event: 'draw',
+                    payload: { tool: 'pencil', x0: lastX, y0: lastY, x1: e.clientX, y1: e.clientY, color: colorPicker.value }
+                });
+                
+                lastX = e.clientX;
+                lastY = e.clientY;
+            }
+        });
+
+        window.addEventListener('mouseup', (e) => {
+            if (isDrawing && toolPicker.value !== 'pencil' && toolPicker.value !== 'text') {
+                const endX = e.clientX;
+                const endY = e.clientY;
+                ctx.fillStyle = colorPicker.value;
+
+                if (toolPicker.value === 'square') {
+                    const width = endX - startX;
+                    const height = endY - startY;
+                    ctx.fillRect(startX, startY, width, height);
+                    room.send({
+                        type: 'broadcast', event: 'draw',
+                        payload: { tool: 'square', x0: startX, y0: startY, w: width, h: height, color: colorPicker.value }
+                    });
+                } 
+                else if (toolPicker.value === 'circle') {
+                    const radius = Math.sqrt(Math.pow(endX - startX, 2) + Math.pow(endY - startY, 2));
+                    ctx.beginPath();
+                    ctx.arc(startX, startY, radius, 0, 2 * Math.PI);
+                    ctx.fill();
+                    room.send({
+                        type: 'broadcast', event: 'draw',
+                        payload: { tool: 'circle', x0: startX, y0: startY, r: radius, color: colorPicker.value }
+                    });
+                }
+            }
+
+            if (isDrawing) {
+                isDrawing = false;
+                saveToCloud();
+            }
+        });
+
+        window.addEventListener('resize', () => {
+            const tempCanvas = document.createElement('canvas');
+            tempCanvas.width = canvas.width;
+            tempCanvas.height = canvas.height;
+            const tempCtx = tempCanvas.getContext('2d');
+            tempCtx.drawImage(canvas, 0, 0);
+
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+            ctx.lineCap = 'round';
+            ctx.drawImage(tempCanvas, 0, 0);
+        });
+    </script>
+</body>
+</html>
