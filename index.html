@@ -483,27 +483,39 @@
 
         // --- PUNISHMENT & PERSISTENT BAN CHECK ---
         async function checkPunishments(roomId, myName) {
+            // 1. Devs bypass punishments
             if (isDev) return { banned: false, muted: false, reason: null, banExpires: null, muteExpires: null };
             
-            if (localStorage.getItem(`banned_${roomId}`) === 'true') {
-                return { banned: true, muted: false, reason: "Banned from this room.", banExpires: null, muteExpires: null };
-            }
-
-            const now = new Date().toISOString();
+            const cleanName = myName.trim().toLowerCase();
+            const now = new Date();
             
             try {
-                await db.from('banned_users').delete().lt('expires_at', now);
-                await db.from('muted_users').delete().lt('expires_at', now);
-
-                const { data: banData } = await db.from('banned_users').select('*').eq('room_id', roomId);
-                const { data: muteData } = await db.from('muted_users').select('*').eq('room_id', roomId);
+                // 2. Fetch all punishments for this room from the database
+                const { data: banData, error: banErr } = await db.from('banned_users').select('*').eq('room_id', roomId);
+                const { data: muteData, error: muteErr } = await db.from('muted_users').select('*').eq('room_id', roomId);
                 
-                const cleanName = myName.trim().toLowerCase();
-                const myBan = (banData || []).find(b => b.user_id === myId || (b.user_name && b.user_name.trim().toLowerCase() === cleanName));
-                const myMute = (muteData || []).find(m => m.user_id === myId || (m.user_name && m.user_name.trim().toLowerCase() === cleanName));
+                if (banErr) console.error("Ban fetch error:", banErr);
 
+                // 3. Find if this specific user is banned, AND ensure the ban hasn't expired yet
+                const myBan = (banData || []).find(b => {
+                    const isMe = b.user_id === myId || (b.user_name && b.user_name.trim().toLowerCase() === cleanName);
+                    const isActive = !b.expires_at || new Date(b.expires_at) > now; // Null = perm, or future date
+                    return isMe && isActive;
+                });
+
+                // 4. Find if this specific user is muted, AND ensure the mute hasn't expired yet
+                const myMute = (muteData || []).find(m => {
+                    const isMe = m.user_id === myId || (m.user_name && m.user_name.trim().toLowerCase() === cleanName);
+                    const isActive = !m.expires_at || new Date(m.expires_at) > now;
+                    return isMe && isActive;
+                });
+
+                // 5. Sync the local browser cache with the actual database truth
                 if (myBan) {
                     localStorage.setItem(`banned_${roomId}`, 'true');
+                } else {
+                    // CRITICAL: If they aren't banned in the DB (or it expired), remove the local block!
+                    localStorage.removeItem(`banned_${roomId}`); 
                 }
 
                 return { 
@@ -513,11 +525,15 @@
                     banExpires: myBan ? myBan.expires_at : null,
                     muteExpires: myMute ? myMute.expires_at : null
                 };
+                
             } catch (e) {
                 console.error("Punishment verification failed:", e);
-                return { banned: false, muted: false, reason: null, banExpires: null, muteExpires: null };
+                // Fallback: only if DB totally crashes, rely on local storage
+                const locallyBanned = localStorage.getItem(`banned_${roomId}`) === 'true';
+                return { banned: locallyBanned, muted: false, reason: "Connection error. Local ban cache active.", banExpires: null, muteExpires: null };
             }
         }
+
 
         async function connectToRoom(roomData) {
             const myName = globalNameInput.value.replace(/\s+/g, '') || "Anonymous";
@@ -831,7 +847,11 @@
                         reason: finalReason 
                     }]);
 
-                    if (error) console.error("Database insert error:", error);
+                    if (error) {
+                        console.error("Database insert error:", error);
+                        appendChat(`[System]: Failed to ban user - Database error.`, 'system');
+                        return; // Stop here if DB write fails
+                    }
 
                     if (roomChannel) {
                         roomChannel.send({ 
@@ -1006,12 +1026,17 @@
                 }]);
                 
                 if (error) {
-                    alert(`Database Error (${type}): ${error.message}`);
+                    alert(`Failed to save punishment to database: ${error.message}`);
                     console.error("Punish insert error:", error);
+                    return; // ⛔ STOP HERE if the DB write fails!
                 }
 
-                if(roomChannel) roomChannel.send({ type: 'broadcast', event: 'punish', payload: { id, name, type, reason, expires } });
-                fetchPunishments(); updatePlayerUI();
+                if(roomChannel) {
+                    roomChannel.send({ type: 'broadcast', event: 'punish', payload: { id, name, type, reason, expires } });
+                }
+                
+                fetchPunishments(); 
+                updatePlayerUI();
             }
         };
 
@@ -1022,6 +1047,7 @@
             if (error) {
                 alert(`Database Error (unpunish): ${error.message}`);
                 console.error("Unpunish error:", error);
+                return; // ⛔ STOP HERE if the DB write fails!
             }
 
             if(roomChannel) {
