@@ -3,19 +3,88 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>OpenCanvas64 - Realtime Canvas</title>
-    <link rel="icon" type="image/x-icon" href="/favicon.ico">
+    <title>OpenCanvas64 - Multi-Room</title>
     <style>
         body {
             margin: 0;
-            overflow: hidden;
-            background-color: #f0f0f0;
+            background-color: #2a2a2a;
             font-family: sans-serif;
             user-select: none;
+            /* Allow scrolling for large canvases */
+            overflow: auto; 
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
         }
         
+        /* --------------------------
+           LOBBY STYLES
+        --------------------------- */
+        #lobbyView {
+            position: fixed;
+            top: 0; left: 0; width: 100vw; height: 100vh;
+            background: #1e1e1e;
+            z-index: 2000;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding-top: 60px;
+            color: white;
+            overflow-y: auto;
+        }
+
+        .lobby-container {
+            width: 100%;
+            max-width: 800px;
+            background: #2a2a2a;
+            padding: 24px;
+            border-radius: 12px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .lobby-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid #444;
+            padding-bottom: 16px;
+        }
+
+        .room-list {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+
+        .room-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: #333;
+            padding: 12px 16px;
+            border-radius: 8px;
+            transition: background 0.2s;
+        }
+
+        .room-row:hover {
+            background: #444;
+        }
+
+        .room-details { display: flex; flex-direction: column; gap: 4px; }
+        .room-title { font-size: 18px; font-weight: bold; color: #4CAF50; }
+        .room-meta { font-size: 12px; color: #aaa; }
+
+        /* --------------------------
+           CANVAS & UI STYLES
+        --------------------------- */
         #toolbar {
-            position: absolute;
+            position: fixed;
             top: 10px;
             left: 50%;
             transform: translateX(-50%);
@@ -30,18 +99,16 @@
             box-shadow: 0 4px 12px rgba(0,0,0,0.3);
         }
         
-        .tool-group {
-            display: flex;
-            align-items: center;
-            gap: 6px;
-        }
+        .tool-group { display: flex; align-items: center; gap: 6px; }
 
-        button, select, input[type="color"], input[type="text"], input[type="password"] {
-            padding: 6px 10px;
+        button, select, input {
+            padding: 8px 12px;
             border-radius: 4px;
-            border: none;
+            border: 1px solid #555;
             outline: none;
             font-size: 14px;
+            background: #fff;
+            color: #222;
         }
 
         button {
@@ -49,46 +116,35 @@
             background-color: #4CAF50;
             color: white;
             font-weight: bold;
+            border: none;
         }
-
+        button:hover { filter: brightness(1.1); }
         button.danger-btn { background-color: #f44336; }
         button.admin-btn { background-color: #9c27b0; }
         button.secondary-btn { background-color: #2196F3; }
 
-        .canvas-container {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100vw;
-            height: 100vh;
+        .canvas-wrapper {
+            position: relative;
+            background: transparent;
+            box-shadow: 0 0 30px rgba(0,0,0,0.8);
+            margin: 80px 20px 20px 20px; /* Space for toolbar */
         }
 
         canvas {
             position: absolute;
-            top: 0;
-            left: 0;
+            top: 0; left: 0;
         }
 
-        #drawingCanvas {
-            background-color: #ffffff;
-            z-index: 1;
-        }
+        #drawingCanvas { background-color: #ffffff; z-index: 1; }
+        #previewCanvas { z-index: 2; cursor: crosshair; pointer-events: auto; }
 
-        #previewCanvas {
-            z-index: 2;
-            cursor: crosshair;
-            pointer-events: auto;
-        }
-
-        /* Inline Text Input overlay */
         #inlineTextInput {
             position: absolute;
             z-index: 200;
             background: transparent;
             border: 1px dashed #2196F3;
             outline: none;
-            padding: 0;
-            margin: 0;
+            padding: 0; margin: 0;
             font-family: Arial, sans-serif;
             color: black;
             line-height: 1;
@@ -102,8 +158,7 @@
         }
         
         .cursor-pointer {
-            width: 14px;
-            height: 14px;
+            width: 14px; height: 14px;
             background-color: red;
             border-radius: 50%;
             border: 2px solid white;
@@ -113,221 +168,185 @@
         
         .cursor-name {
             position: absolute;
-            top: -24px;
-            left: -10px;
-            background: rgba(0,0,0,0.8);
-            color: white;
-            padding: 2px 6px;
-            border-radius: 4px;
-            font-size: 11px;
-            white-space: nowrap;
-        }
-
-        #pingDisplay {
-            position: absolute;
-            bottom: 8px;
-            right: 12px;
-            background: rgba(0, 0, 0, 0.6);
-            color: #00ff66;
-            font-family: monospace;
-            font-size: 11px;
-            padding: 3px 8px;
-            border-radius: 4px;
-            z-index: 100;
-            pointer-events: none;
+            top: -24px; left: -10px;
+            background: rgba(0,0,0,0.8); color: white;
+            padding: 2px 6px; border-radius: 4px;
+            font-size: 11px; white-space: nowrap;
         }
 
         .modal-overlay {
             position: fixed;
-            top: 0;
-            left: 0;
-            width: 100vw;
-            height: 100vh;
-            background: rgba(0,0,0,0.75);
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            z-index: 1000;
+            top: 0; left: 0; width: 100vw; height: 100vh;
+            background: rgba(0,0,0,0.85);
+            display: flex; justify-content: center; align-items: center;
+            z-index: 3000;
         }
 
         .modal-box {
-            background: white;
-            padding: 24px;
-            border-radius: 12px;
-            display: flex;
-            flex-direction: column;
-            gap: 14px;
-            width: 340px;
-            color: #222;
-            box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+            background: #2a2a2a;
+            padding: 24px; border-radius: 12px;
+            display: flex; flex-direction: column; gap: 14px;
+            width: 360px; color: white;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.6);
         }
 
-        .modal-box h2, .modal-box h3 {
-            margin: 0;
-            text-align: center;
-        }
-
-        .error-msg {
-            color: #f44336;
-            font-size: 12px;
-            font-weight: bold;
-            text-align: center;
-        }
-
-        .player-list {
-            max-height: 120px;
-            overflow-y: auto;
-            border: 1px solid #ccc;
-            border-radius: 4px;
-            padding: 6px;
-            display: flex;
-            flex-direction: column;
-            gap: 6px;
-        }
-
-        .player-item {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            background: #f8f8f8;
-            padding: 4px 8px;
-            border-radius: 4px;
-            font-size: 13px;
-        }
+        .modal-box h2, .modal-box h3 { margin: 0; text-align: center; color: #fff; }
+        .modal-box label { font-size: 13px; color: #ccc; font-weight: bold; }
 
         .hidden { display: none !important; }
-
+        
         #banOverlay {
-            background: rgba(180, 0, 0, 0.95);
-            color: white;
-            z-index: 9999;
-            text-align: center;
-        }
-        #banOverlay h1 {
-            font-size: 32px;
-            margin-bottom: 8px;
+            background: rgba(180, 0, 0, 0.95); color: white; z-index: 9999; text-align: center;
         }
     </style>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>
 
-    <div id="toolbar">
-        <div class="tool-group">
-            <label>Color:</label>
-            <input type="color" id="colorPicker" value="#000000">
-        </div>
-        <div class="tool-group">
-            <label>Tool:</label>
-            <select id="toolPicker">
-                <option value="pencil">Pencil</option>
-                <option value="square">Square</option>
-                <option value="circle">Circle</option>
-                <option value="text">Text</option>
-            </select>
-        </div>
+    <div id="lobbyView">
+        <h1 style="margin-bottom: 30px; font-size: 42px; text-shadow: 0 4px 10px rgba(0,0,0,0.5);">🎨 OpenCanvas64</h1>
         
-        <div class="tool-group" id="pencilSizeGroup">
-            <label>Pencil Size:</label>
-            <select id="pencilSizePicker">
-                <option value="2">2px</option>
-                <option value="5" selected>5px</option>
-                <option value="10">10px</option>
-                <option value="20">20px</option>
-                <option value="40">40px</option>
-            </select>
-        </div>
+        <div class="lobby-container">
+            <div class="lobby-header">
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <label style="font-weight: bold; color: #ccc;">Your Username:</label>
+                    <input type="text" id="globalNameInput" placeholder="Enter Name..." value="Anonymous" style="width: 150px;">
+                </div>
+                <button id="openCreateRoomBtn" class="secondary-btn">➕ Create New Room</button>
+            </div>
 
-        <div class="tool-group hidden" id="textSizeGroup">
-            <label>Text Size:</label>
-            <select id="textSizePicker">
-                <option value="12">12px</option>
-                <option value="16">16px</option>
-                <option value="20" selected>20px</option>
-                <option value="28">28px</option>
-                <option value="36">36px</option>
-                <option value="48">48px</option>
-                <option value="72">72px</option>
-            </select>
-        </div>
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <h2 style="margin: 0; font-size: 20px;">🌐 Public Server Browser</h2>
+                <div style="display: flex; gap: 8px;">
+                    <input type="text" id="privateCodeInput" placeholder="Room Code..." style="width: 120px;">
+                    <button id="joinPrivateBtn">Join Private</button>
+                </div>
+            </div>
 
-        <button id="openChangeNameBtn" class="secondary-btn">Change Name</button>
-        <button id="openAdminBtn" class="admin-btn">Admin Menu</button>
-        <div class="tool-group" id="statusText" style="color: #ffaa00; margin-left: 8px;">
-            Connecting...
+            <div class="room-list" id="publicRoomsList">
+                <div style="text-align: center; color: #888; padding: 20px;">Loading rooms...</div>
+            </div>
         </div>
     </div>
 
-    <div class="canvas-container">
-        <canvas id="drawingCanvas"></canvas>
-        <canvas id="previewCanvas"></canvas>
-        <input type="text" id="inlineTextInput" class="hidden">
+    <div id="createRoomModal" class="modal-overlay hidden">
+        <div class="modal-box">
+            <h2>➕ Create Room</h2>
+            
+            <label>Room Name:</label>
+            <input type="text" id="newRoomName" placeholder="e.g. Pixel Artists Hangout">
+            
+            <div style="display: flex; gap: 12px;">
+                <div style="flex: 1; display: flex; flex-direction: column; gap: 4px;">
+                    <label>Width (px):</label>
+                    <input type="number" id="newRoomWidth" value="1280">
+                </div>
+                <div style="flex: 1; display: flex; flex-direction: column; gap: 4px;">
+                    <label>Height (px):</label>
+                    <input type="number" id="newRoomHeight" value="720">
+                </div>
+            </div>
+
+            <label>Visibility:</label>
+            <select id="newRoomVisibility">
+                <option value="public">🌐 Public (Listed)</option>
+                <option value="private">🔒 Private (Hidden, Code Only)</option>
+            </select>
+
+            <label>Admin Password:</label>
+            <input type="password" id="newRoomAdminPass" placeholder="Set a secret password...">
+
+            <div style="display: flex; gap: 8px; margin-top: 10px;">
+                <button id="cancelCreateRoomBtn" style="background: #666; flex: 1;">Cancel</button>
+                <button id="submitCreateRoomBtn" style="flex: 2;">Create & Join</button>
+            </div>
+        </div>
     </div>
 
-    <div id="cursorsContainer"></div>
+    <div id="mainAppView" class="hidden">
+        
+        <div id="toolbar">
+            <button id="leaveRoomBtn" style="background: #555;">🏠 Leave</button>
+            <div style="width: 1px; height: 24px; background: #666; margin: 0 4px;"></div>
+            
+            <div class="tool-group">
+                <input type="color" id="colorPicker" value="#000000">
+            </div>
+            <div class="tool-group">
+                <select id="toolPicker">
+                    <option value="pencil">Pencil</option>
+                    <option value="square">Square</option>
+                    <option value="circle">Circle</option>
+                    <option value="text">Text</option>
+                </select>
+            </div>
+            
+            <div class="tool-group" id="pencilSizeGroup">
+                <select id="pencilSizePicker">
+                    <option value="2">2px</option>
+                    <option value="5" selected>5px</option>
+                    <option value="10">10px</option>
+                    <option value="20">20px</option>
+                    <option value="40">40px</option>
+                </select>
+            </div>
+            <div class="tool-group hidden" id="textSizeGroup">
+                <select id="textSizePicker">
+                    <option value="12">12px</option>
+                    <option value="20" selected>20px</option>
+                    <option value="36">36px</option>
+                    <option value="72">72px</option>
+                </select>
+            </div>
 
-    <div id="pingDisplay">Ping: -- ms</div>
+            <div style="width: 1px; height: 24px; background: #666; margin: 0 4px;"></div>
+            <button id="openAdminBtn" class="admin-btn">Admin Menu</button>
+            <div class="tool-group" id="statusText" style="color: #ffaa00; margin-left: 8px; font-size: 12px; font-weight: bold;">
+                Connecting...
+            </div>
+        </div>
+
+        <div class="canvas-wrapper" id="canvasWrapper">
+            <canvas id="drawingCanvas"></canvas>
+            <canvas id="previewCanvas"></canvas>
+            <input type="text" id="inlineTextInput" class="hidden">
+            <div id="cursorsContainer"></div>
+        </div>
+    </div>
 
     <div id="banOverlay" class="modal-overlay hidden">
-        <div style="max-width: 400px; padding: 20px;">
-            <h1>🚫 YOU ARE BANNED</h1>
-            <p>An administrator has removed you from this canvas room.</p>
-            <p style="font-size: 12px; opacity: 0.8;">Your Ban is recorded in the database.</p>
-        </div>
-    </div>
-
-    <div id="startMenuModal" class="modal-overlay">
-        <div class="modal-box">
-            <h2 id="modalTitle">🎨 Canvas Room</h2>
-            <label style="font-weight: bold; font-size: 13px;">Enter Your Name:</label>
-            <input type="text" id="nameInput" placeholder="Name..." value="Anonymous">
-            <div id="nameErrorMsg" class="error-msg hidden">That name is taken or banned!</div>
-            <div style="display: flex; gap: 8px;">
-                <button id="cancelNameBtn" style="background: #888; flex: 1;" class="hidden">Cancel</button>
-                <button id="joinRoomBtn" style="padding: 10px; font-size: 16px; flex: 2;">Join Canvas</button>
-            </div>
+        <div class="modal-box" style="text-align: center; border: 2px solid red;">
+            <h1 style="color: #f44336; margin-bottom: 8px;">🚫 BANNED</h1>
+            <p>You have been banned from this room by the Admin.</p>
+            <button onclick="location.reload()" style="margin-top: 15px;">Return to Lobby</button>
         </div>
     </div>
 
     <div id="adminModal" class="modal-overlay hidden">
         <div id="adminLoginBox" class="modal-box">
-            <h3>🔒 Admin Login</h3>
-            <input type="password" id="adminPasswordInput" placeholder="Enter Admin Password...">
+            <h3>🔒 Room Admin Login</h3>
+            <input type="password" id="adminPasswordInput" placeholder="Enter Room Password...">
             <div style="display: flex; gap: 8px; justify-content: flex-end;">
-                <button id="closeAdminLoginBtn" style="background: #888;">Cancel</button>
+                <button id="closeAdminLoginBtn" style="background: #666;">Cancel</button>
                 <button id="submitAdminLoginBtn" class="admin-btn">Login</button>
             </div>
         </div>
 
-        <div id="adminDashboardBox" class="modal-box hidden" style="width: 380px;">
-            <h3>🛠️ Admin Control Panel</h3>
-            
+        <div id="adminDashboardBox" class="modal-box hidden" style="width: 400px;">
+            <h3>🛠️ Room Admin Panel</h3>
             <div style="display: flex; gap: 8px;">
                 <button id="adminClearBtn" class="danger-btn" style="flex: 1;">Clear Canvas</button>
-                <button id="adminClearBansBtn" class="secondary-btn" style="flex: 1; background: #ff9800;">Clear All DB Bans</button>
+                <button id="adminFillBtn" class="secondary-btn" style="flex: 1;">Fill Screen</button>
+                <input type="color" id="fillColorPicker" value="#ffffff" style="padding: 0; width: 40px;">
             </div>
-
-            <hr style="width: 100%; border: 0; border-top: 1px solid #ddd; margin: 4px 0;">
-
-            <div style="display: flex; align-items: center; justify-content: space-between;">
-                <label style="font-weight: bold; font-size: 13px;">Fill Screen Color:</label>
-                <input type="color" id="fillColorPicker" value="#ffffff">
-                <button id="adminFillBtn">Fill Screen</button>
-            </div>
-
-            <hr style="width: 100%; border: 0; border-top: 1px solid #ddd; margin: 4px 0;">
-
-            <label style="font-weight: bold; font-size: 13px;">Connected Players:</label>
-            <div id="playerListContainer" class="player-list">
-                <div style="color: #888; font-size: 12px; text-align: center;">No active players</div>
-            </div>
-
-            <label style="font-weight: bold; font-size: 13px; margin-top: 4px;">Banned Players (Database):</label>
-            <div id="bannedListContainer" class="player-list">
-                <div style="color: #888; font-size: 12px; text-align: center;">Loading bans...</div>
-            </div>
-
-            <button id="closeAdminDashBtn" style="background: #888; margin-top: 8px;">Close Admin Menu</button>
+            <hr style="width: 100%; border-top: 1px solid #555; margin: 4px 0;">
+            <label>Connected Players:</label>
+            <div id="playerListContainer" style="max-height: 100px; overflow-y: auto; background: #222; padding: 6px; border-radius: 4px;"></div>
+            
+            <label style="margin-top: 10px;">Banned Players (This Room):</label>
+            <div id="bannedListContainer" style="max-height: 100px; overflow-y: auto; background: #222; padding: 6px; border-radius: 4px;"></div>
+            
+            <button id="closeAdminDashBtn" style="background: #666; margin-top: 10px;">Close Admin Panel</button>
         </div>
     </div>
 
@@ -337,229 +356,168 @@
         const supabaseKey = 'sb_publishable_XTu1_XJMCZdkYJgeOqJjKw_MgmnLvF9'; 
         const db = window.supabase.createClient(supabaseUrl, supabaseKey);
 
-        // Canvas References
-        const canvas = document.getElementById('drawingCanvas');
-        const ctx = canvas.getContext('2d');
-        const previewCanvas = document.getElementById('previewCanvas');
-        const pCtx = previewCanvas.getContext('2d');
-        const inlineTextInput = document.getElementById('inlineTextInput');
-
-        // UI References
-        const statusText = document.getElementById('statusText');
-        const colorPicker = document.getElementById('colorPicker');
-        const toolPicker = document.getElementById('toolPicker');
-        const pencilSizePicker = document.getElementById('pencilSizePicker');
-        const textSizePicker = document.getElementById('textSizePicker');
-        const pencilSizeGroup = document.getElementById('pencilSizeGroup');
-        const textSizeGroup = document.getElementById('textSizeGroup');
-        const cursorsContainer = document.getElementById('cursorsContainer');
-        const pingDisplay = document.getElementById('pingDisplay');
-
-        const banOverlay = document.getElementById('banOverlay');
-        const startMenuModal = document.getElementById('startMenuModal');
-        const modalTitle = document.getElementById('modalTitle');
-        const nameInput = document.getElementById('nameInput');
-        const nameErrorMsg = document.getElementById('nameErrorMsg');
-        const joinRoomBtn = document.getElementById('joinRoomBtn');
-        const cancelNameBtn = document.getElementById('cancelNameBtn');
-        const openChangeNameBtn = document.getElementById('openChangeNameBtn');
-
-        const adminModal = document.getElementById('adminModal');
-        const adminLoginBox = document.getElementById('adminLoginBox');
-        const adminDashboardBox = document.getElementById('adminDashboardBox');
-        const openAdminBtn = document.getElementById('openAdminBtn');
-        const adminPasswordInput = document.getElementById('adminPasswordInput');
-        const submitAdminLoginBtn = document.getElementById('submitAdminLoginBtn');
-        const closeAdminLoginBtn = document.getElementById('closeAdminLoginBtn');
-        const closeAdminDashBtn = document.getElementById('closeAdminDashBtn');
-
-        const adminClearBtn = document.getElementById('adminClearBtn');
-        const adminClearBansBtn = document.getElementById('adminClearBansBtn');
-        const adminFillBtn = document.getElementById('adminFillBtn');
-        const fillColorPicker = document.getElementById('fillColorPicker');
-        const playerListContainer = document.getElementById('playerListContainer');
-        const bannedListContainer = document.getElementById('bannedListContainer');
-
-        // Toggle size pickers based on selected tool
-        toolPicker.addEventListener('change', () => {
-            commitInlineText(); // Save any pending text input if switching tools
-            if (toolPicker.value === 'text') {
-                pencilSizeGroup.classList.add('hidden');
-                textSizeGroup.classList.remove('hidden');
-            } else {
-                pencilSizeGroup.classList.remove('hidden');
-                textSizeGroup.classList.add('hidden');
-            }
-        });
-
-        // Initialize Canvas Dimensions
-        function resizeCanvases() {
-            const tempCanvas = document.createElement('canvas');
-            tempCanvas.width = canvas.width;
-            tempCanvas.height = canvas.height;
-            const tempCtx = tempCanvas.getContext('2d');
-            tempCtx.drawImage(canvas, 0, 0);
-
-            canvas.width = window.innerWidth;
-            canvas.height = window.innerHeight;
-            previewCanvas.width = window.innerWidth;
-            previewCanvas.height = window.innerHeight;
-
-            ctx.lineCap = 'round';
-            pCtx.lineCap = 'round';
-            ctx.drawImage(tempCanvas, 0, 0);
-        }
-
-        canvas.width = window.innerWidth;
-        canvas.height = window.innerHeight;
-        previewCanvas.width = window.innerWidth;
-        previewCanvas.height = window.innerHeight;
-        ctx.lineCap = 'round';
-        pCtx.lineCap = 'round';
-
-        let myName = localStorage.getItem('canvas_user_name') || "Anonymous";
+        // Core State
         let myId = localStorage.getItem('canvas_my_id') || Math.random().toString(36).substr(2, 9);
         localStorage.setItem('canvas_my_id', myId);
-
-        let room;
+        
+        let currentRoomCode = null;
+        let currentRoomData = null;
+        let roomChannel = null;
         let activePlayers = {}; 
         let isBanned = false;
 
-        let isDrawing = false;
-        let startX = 0, startY = 0;
-        let lastX = 0, lastY = 0;
-        let activeTextCoords = null;
-        let reconnectTimeout = null;
-        let lastCursorSend = 0;
+        // UI Refs - Lobby
+        const lobbyView = document.getElementById('lobbyView');
+        const mainAppView = document.getElementById('mainAppView');
+        const globalNameInput = document.getElementById('globalNameInput');
+        const publicRoomsList = document.getElementById('publicRoomsList');
+        const createRoomModal = document.getElementById('createRoomModal');
+        const privateCodeInput = document.getElementById('privateCodeInput');
+        
+        // UI Refs - Canvas
+        const canvasWrapper = document.getElementById('canvasWrapper');
+        const drawingCanvas = document.getElementById('drawingCanvas');
+        const dCtx = drawingCanvas.getContext('2d');
+        const previewCanvas = document.getElementById('previewCanvas');
+        const pCtx = previewCanvas.getContext('2d');
+        const inlineTextInput = document.getElementById('inlineTextInput');
+        const cursorsContainer = document.getElementById('cursorsContainer');
+        const toolPicker = document.getElementById('toolPicker');
+        const colorPicker = document.getElementById('colorPicker');
 
-        nameInput.value = myName;
+        globalNameInput.value = localStorage.getItem('canvas_user_name') || "Anonymous";
+        globalNameInput.addEventListener('input', (e) => localStorage.setItem('canvas_user_name', e.target.value.trim()));
 
-        // Startup: Verify Ban Status via Database
-        checkDatabaseBan().then(banned => {
-            if (banned) {
-                triggerBanLockout();
-            } else {
-                initMultiplayer();
-            }
-        });
-
-        async function checkDatabaseBan() {
-            try {
-                const { data, error } = await db
-                    .from('banned_users')
-                    .select('user_id, user_name');
-
-                if (data && data.length > 0) {
-                    const found = data.some(b => 
-                        b.user_id === myId || 
-                        (b.user_name && b.user_name.toLowerCase() === myName.toLowerCase())
-                    );
-                    if (found) return true;
-                }
-            } catch (err) {
-                console.warn("Ban check failed:", err);
-            }
-            return false;
-        }
-
-        function triggerBanLockout() {
-            isBanned = true;
-            banOverlay.classList.remove('hidden');
-            startMenuModal.classList.add('hidden');
-            adminModal.classList.add('hidden');
-            inlineTextInput.classList.add('hidden');
-            statusText.innerText = "Banned";
-            statusText.style.color = "#ff4444";
-        }
-
-        function measurePing() {
-            const startTime = performance.now();
-            fetch(`${supabaseUrl}/rest/v1/`, { method: 'HEAD', headers: { 'apikey': supabaseKey } })
-            .then(() => {
-                pingDisplay.innerText = `Ping: ${Math.round(performance.now() - startTime)} ms`;
-            })
-            .catch(() => {
-                pingDisplay.innerText = `Ping: Reconnecting...`;
-            });
-        }
-        measurePing();
-        setInterval(measurePing, 3000);
-
-        function isNameTaken(targetName) {
-            const lowerTarget = targetName.toLowerCase();
-            return Object.keys(activePlayers).some(id => {
-                return id !== myId && activePlayers[id].name.toLowerCase() === lowerTarget;
-            });
-        }
-
-        joinRoomBtn.addEventListener('click', async () => {
-            const chosenName = nameInput.value.trim() || "Anonymous";
-            myName = chosenName;
-
-            const isDbBanned = await checkDatabaseBan();
-            if (isDbBanned) {
-                triggerBanLockout();
-                return;
-            }
-
-            if (isNameTaken(chosenName)) {
-                nameErrorMsg.classList.remove('hidden');
-                return;
-            }
-
-            nameErrorMsg.classList.add('hidden');
-            localStorage.setItem('canvas_user_name', myName);
-            startMenuModal.classList.add('hidden');
+        // ==========================================
+        // LOBBY & ROOM MANAGEMENT
+        // ==========================================
+        
+        async function fetchPublicRooms() {
+            publicRoomsList.innerHTML = '<div style="text-align: center; color: #888; padding: 20px;">Loading rooms...</div>';
+            const { data, error } = await db.from('rooms').select('*').eq('is_public', true).order('created_at', { ascending: false });
             
-            broadcastCursor(0, 0);
-            statusText.innerText = `Connected as ${myName}`;
-            statusText.style.color = "#44ff44";
+            if (error) {
+                publicRoomsList.innerHTML = `<div style="color: red; padding: 10px;">Error: ${error.message}</div>`;
+                return;
+            }
+
+            publicRoomsList.innerHTML = '';
+            if (!data || data.length === 0) {
+                publicRoomsList.innerHTML = '<div style="text-align: center; color: #888; padding: 20px;">No public rooms available. Create one!</div>';
+                return;
+            }
+
+            data.forEach(room => {
+                const div = document.createElement('div');
+                div.className = 'room-row';
+                div.innerHTML = `
+                    <div class="room-details">
+                        <span class="room-title">${room.room_name}</span>
+                        <span class="room-meta">Code: ${room.room_code} | Size: ${room.width}x${room.height}</span>
+                    </div>
+                    <button class="secondary-btn" onclick="joinRoom('${room.room_code}')">Join</button>
+                `;
+                publicRoomsList.appendChild(div);
+            });
+        }
+        fetchPublicRooms(); // Init lobby
+
+        document.getElementById('openCreateRoomBtn').addEventListener('click', () => createRoomModal.classList.remove('hidden'));
+        document.getElementById('cancelCreateRoomBtn').addEventListener('click', () => createRoomModal.classList.add('hidden'));
+
+        document.getElementById('submitCreateRoomBtn').addEventListener('click', async () => {
+            const name = document.getElementById('newRoomName').value.trim() || "Untitled Room";
+            const w = parseInt(document.getElementById('newRoomWidth').value) || 1280;
+            const h = parseInt(document.getElementById('newRoomHeight').value) || 720;
+            const isPublic = document.getElementById('newRoomVisibility').value === 'public';
+            const adminPass = document.getElementById('newRoomAdminPass').value || "1234";
+            const code = "room-" + Math.random().toString(36).substr(2, 6);
+
+            const { error } = await db.from('rooms').insert([{
+                room_code: code, room_name: name, width: w, height: h, is_public: isPublic, admin_password: adminPass
+            }]);
+
+            if (error) {
+                alert("Failed to create room: " + error.message);
+            } else {
+                createRoomModal.classList.add('hidden');
+                joinRoom(code);
+            }
         });
 
-        openChangeNameBtn.addEventListener('click', () => {
-            if (isBanned) return;
-            modalTitle.innerText = "✏️ Change Name";
-            joinRoomBtn.innerText = "Save Name";
-            cancelNameBtn.classList.remove('hidden');
-            nameInput.value = myName;
-            nameErrorMsg.classList.add('hidden');
-            startMenuModal.classList.remove('hidden');
+        document.getElementById('joinPrivateBtn').addEventListener('click', () => {
+            const code = privateCodeInput.value.trim();
+            if (code) joinRoom(code);
         });
 
-        cancelNameBtn.addEventListener('click', () => startMenuModal.classList.add('hidden'));
+        document.getElementById('leaveRoomBtn').addEventListener('click', () => location.reload());
 
-        function initMultiplayer() {
-            if (room) return;
+        // ==========================================
+        // JOINING & REALTIME NETWORKING
+        // ==========================================
 
-            room = db.channel('global_whiteboard');
+        async function joinRoom(code) {
+            const myName = globalNameInput.value.trim() || "Anonymous";
 
-            room.on('broadcast', { event: 'draw' }, (payload) => {
+            // 1. Fetch Room Data
+            const { data: roomDataArr, error: roomError } = await db.from('rooms').select('*').eq('room_code', code).limit(1);
+            if (roomError || !roomDataArr || roomDataArr.length === 0) {
+                alert("Room not found!"); return;
+            }
+            currentRoomData = roomDataArr[0];
+            currentRoomCode = code;
+
+            // 2. Check Ban Status for THIS room
+            const { data: banData } = await db.from('banned_users').select('*')
+                .eq('room_code', code)
+                .or(`user_id.eq.${myId},user_name.ilike.${myName}`);
+            
+            if (banData && banData.length > 0) {
+                document.getElementById('banOverlay').classList.remove('hidden');
+                return;
+            }
+
+            // 3. Setup Canvas Size
+            drawingCanvas.width = currentRoomData.width;
+            drawingCanvas.height = currentRoomData.height;
+            previewCanvas.width = currentRoomData.width;
+            previewCanvas.height = currentRoomData.height;
+            canvasWrapper.style.width = `${currentRoomData.width}px`;
+            canvasWrapper.style.height = `${currentRoomData.height}px`;
+            
+            dCtx.lineCap = 'round'; pCtx.lineCap = 'round';
+            
+            // 4. Swap Views
+            lobbyView.classList.add('hidden');
+            mainAppView.classList.remove('hidden');
+            document.getElementById('statusText').innerText = `Room: ${currentRoomData.room_name}`;
+
+            // 5. Load Initial Canvas Image
+            loadSavedCanvas();
+
+            // 6. Connect Realtime
+            roomChannel = db.channel(`room_${currentRoomCode}`);
+            
+            roomChannel.on('broadcast', { event: 'draw' }, (payload) => {
                 if (isBanned) return;
                 const d = payload.payload;
-
-                ctx.strokeStyle = d.color;
-                ctx.fillStyle = d.color;
-                ctx.lineWidth = d.size || 5;
+                dCtx.strokeStyle = d.color; dCtx.fillStyle = d.color; dCtx.lineWidth = d.size || 5;
 
                 if (d.tool === 'pencil') {
-                    ctx.beginPath(); ctx.moveTo(d.x0, d.y0); ctx.lineTo(d.x1, d.y1); ctx.stroke();
+                    dCtx.beginPath(); dCtx.moveTo(d.x0, d.y0); dCtx.lineTo(d.x1, d.y1); dCtx.stroke();
                 } else if (d.tool === 'square') {
-                    ctx.fillRect(d.x0, d.y0, d.w, d.h);
+                    dCtx.fillRect(d.x0, d.y0, d.w, d.h);
                 } else if (d.tool === 'circle') {
-                    ctx.beginPath(); ctx.arc(d.x0, d.y0, d.r, 0, 2 * Math.PI); ctx.fill();
+                    dCtx.beginPath(); dCtx.arc(d.x0, d.y0, d.r, 0, 2 * Math.PI); dCtx.fill();
                 } else if (d.tool === 'text') {
-                    const fontSize = d.size || 20;
-                    ctx.font = `${fontSize}px Arial`; 
-                    ctx.fillText(d.text, d.x0, d.y0);
+                    dCtx.font = `${d.size || 20}px Arial`; dCtx.fillText(d.text, d.x0, d.y0);
                 }
             });
 
-            room.on('broadcast', { event: 'cursor' }, (payload) => {
+            roomChannel.on('broadcast', { event: 'cursor' }, (payload) => {
                 const d = payload.payload;
-
                 activePlayers[d.id] = { name: d.name, lastSeen: Date.now() };
-                updatePlayerListUI();
-
+                updatePlayerUI();
                 if (d.id === myId) return;
 
                 let cursorEl = document.getElementById(`cursor-${d.id}`);
@@ -567,10 +525,7 @@
                     cursorEl = document.createElement('div');
                     cursorEl.id = `cursor-${d.id}`;
                     cursorEl.className = 'remote-cursor';
-                    cursorEl.innerHTML = `
-                        <div class="cursor-name">${d.name}</div>
-                        <div class="cursor-pointer" style="background-color: ${d.color}"></div>
-                    `;
+                    cursorEl.innerHTML = `<div class="cursor-name">${d.name}</div><div class="cursor-pointer" style="background-color: ${d.color}"></div>`;
                     cursorsContainer.appendChild(cursorEl);
                 } else {
                     cursorEl.querySelector('.cursor-name').innerText = d.name;
@@ -579,475 +534,236 @@
                 cursorEl.style.top = `${d.y}px`;
             });
 
-            room.on('broadcast', { event: 'clear_board' }, () => {
-                if (!isBanned) {
-                    ctx.clearRect(0, 0, canvas.width, canvas.height);
-                    pCtx.clearRect(0, 0, previewCanvas.width, previewCanvas.height);
-                }
-            });
-
-            room.on('broadcast', { event: 'fill_board' }, (payload) => {
-                if (!isBanned) {
-                    ctx.fillStyle = payload.payload.color;
-                    ctx.fillRect(0, 0, canvas.width, canvas.height);
-                }
-            });
-
-            room.on('broadcast', { event: 'ban_player' }, (payload) => {
-                const { id, name } = payload.payload;
-
-                const targetCursor = document.getElementById(`cursor-${id}`);
-                if (targetCursor) targetCursor.remove();
-
-                delete activePlayers[id];
-                updatePlayerListUI();
-                fetchAndRenderBannedList();
-
-                if (id === myId || myName.toLowerCase() === (name || '').toLowerCase()) {
-                    triggerBanLockout();
-                }
-            });
-
-            room.on('broadcast', { event: 'unban_player' }, (payload) => {
-                const { id, targetName } = payload.payload;
-
-                fetchAndRenderBannedList();
-
-                if (id === myId || id === 'ALL' || (targetName && myName.toLowerCase() === targetName.toLowerCase())) {
-                    isBanned = false;
-                    banOverlay.classList.add('hidden');
-                    location.reload();
-                }
-            });
-
-            room.subscribe((status) => {
-                if (status === 'SUBSCRIBED') {
-                    if (reconnectTimeout) clearTimeout(reconnectTimeout);
-                    reconnectTimeout = null;
-                    statusText.innerText = `Connected as ${myName}`;
-                    statusText.style.color = "#44ff44";
-                } else if (status === 'TIMED_OUT' || status === 'CLOSED' || status === 'CHANNEL_ERROR') {
-                    statusText.innerText = "Reconnecting...";
-                    statusText.style.color = "#ffaa00";
-
-                    if (!reconnectTimeout) {
-                        reconnectTimeout = setTimeout(async () => {
-                            reconnectTimeout = null;
-                            if (room) {
-                                await db.removeChannel(room);
-                                room = null;
-                            }
-                            initMultiplayer();
-                        }, 10000);
-                    }
-                }
-            });
-
-            window.addEventListener('mousemove', (e) => {
-                if (!isBanned && startMenuModal.classList.contains('hidden')) {
-                    broadcastCursor(e.clientX, e.clientY);
-                }
-            });
-
-            loadSavedCanvas();
-        }
-
-        function broadcastCursor(x, y) {
-            const now = Date.now();
-            if (room && !isBanned && (now - lastCursorSend > 35)) {
-                lastCursorSend = now;
-                room.send({
-                    type: 'broadcast',
-                    event: 'cursor',
-                    payload: { id: myId, name: myName, x: x, y: y, color: colorPicker.value }
-                });
-            }
-        }
-
-        openAdminBtn.addEventListener('click', () => adminModal.classList.remove('hidden'));
-        closeAdminLoginBtn.addEventListener('click', () => adminModal.classList.add('hidden'));
-        closeAdminDashBtn.addEventListener('click', () => adminModal.classList.add('hidden'));
-
-        submitAdminLoginBtn.addEventListener('click', () => {
-            if (adminPasswordInput.value === "Admin2341") {
-                adminLoginBox.classList.add('hidden');
-                adminDashboardBox.classList.remove('hidden');
-                adminPasswordInput.value = '';
-                updatePlayerListUI();
-                fetchAndRenderBannedList();
-            } else {
-                alert("Incorrect Admin Password!");
-            }
-        });
-
-        adminClearBtn.addEventListener('click', async () => {
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-            pCtx.clearRect(0, 0, previewCanvas.width, previewCanvas.height);
-            const blankCanvas = canvas.toDataURL();
-            await db.from('whiteboard').insert([{ image_data: blankCanvas }]);
-            if (room) room.send({ type: 'broadcast', event: 'clear_board' });
-        });
-
-        adminClearBansBtn.addEventListener('click', async () => {
-            if (confirm("Reset and unban ALL players in Database?")) {
-                const { error } = await db.from('banned_users').delete().neq('user_id', 'NONE');
-                if (error) {
-                    console.error("Error clearing bans:", error);
-                    alert("Error clearing bans: " + error.message);
-                }
-                
-                if (room) {
-                    room.send({
-                        type: 'broadcast',
-                        event: 'unban_player',
-                        payload: { id: 'ALL', targetName: '' }
-                    });
-                }
-                fetchAndRenderBannedList();
-            }
-        });
-
-        adminFillBtn.addEventListener('click', async () => {
-            const fillCol = fillColorPicker.value;
-            ctx.fillStyle = fillCol;
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
-            saveToCloud();
-            if (room) room.send({ type: 'broadcast', event: 'fill_board', payload: { color: fillCol } });
-        });
-
-        function updatePlayerListUI() {
-            if (adminDashboardBox.classList.contains('hidden')) return;
-
-            playerListContainer.innerHTML = '';
-            const playerIds = Object.keys(activePlayers);
-
-            if (playerIds.length === 0) {
-                playerListContainer.innerHTML = `<div style="color: #888; font-size: 12px; text-align: center;">No active players</div>`;
-                return;
-            }
-
-            playerIds.forEach(id => {
-                const player = activePlayers[id];
-                const div = document.createElement('div');
-                div.className = 'player-item';
-                div.innerHTML = `
-                    <span><strong>${player.name}</strong> ${id === myId ? '(You)' : ''}</span>
-                    ${id !== myId ? `<button class="danger-btn" style="padding: 2px 6px; font-size: 11px;" onclick="banUser('${id}')">Ban</button>` : ''}
-                `;
-                playerListContainer.appendChild(div);
-            });
-        }
-
-        async function fetchAndRenderBannedList() {
-            if (adminDashboardBox.classList.contains('hidden')) return;
-
-            bannedListContainer.innerHTML = '<div style="color: #888; font-size: 12px; text-align: center;">Loading bans...</div>';
+            roomChannel.on('broadcast', { event: 'clear' }, () => dCtx.clearRect(0, 0, drawingCanvas.width, drawingCanvas.height));
+            roomChannel.on('broadcast', { event: 'fill' }, (p) => { dCtx.fillStyle = p.payload.c; dCtx.fillRect(0, 0, drawingCanvas.width, drawingCanvas.height); });
             
-            const { data, error } = await db.from('banned_users').select('*');
+            roomChannel.on('broadcast', { event: 'ban' }, (p) => {
+                const { id, name } = p.payload;
+                delete activePlayers[id];
+                if (id === myId || (name && name.toLowerCase() === myName.toLowerCase())) {
+                    isBanned = true; document.getElementById('banOverlay').classList.remove('hidden');
+                }
+            });
 
-            bannedListContainer.innerHTML = '';
+            roomChannel.subscribe();
 
-            if (error) {
-                console.error("Error fetching banned users:", error);
-                bannedListContainer.innerHTML = `<div style="color: #f44336; font-size: 12px; text-align: center;">Error: ${error.message}</div>`;
-                return;
-            }
-
-            if (!data || data.length === 0) {
-                bannedListContainer.innerHTML = `<div style="color: #888; font-size: 12px; text-align: center;">No banned players in DB</div>`;
-                return;
-            }
-
-            data.forEach(item => {
-                const div = document.createElement('div');
-                div.className = 'player-item';
-                div.innerHTML = `
-                    <span><strong>${item.user_name || 'User'}</strong> <small style="color: #888;">(${item.user_id})</small></span>
-                    <button class="secondary-btn" style="padding: 2px 6px; font-size: 11px;" onclick="unbanUser('${item.user_id}', '${item.user_name}')">Unban</button>
-                `;
-                bannedListContainer.appendChild(div);
+            // Setup Cursor Broadcaster
+            window.addEventListener('mousemove', (e) => {
+                if (isBanned || !roomChannel) return;
+                const pos = getMousePos(e); // Safe coords
+                roomChannel.send({
+                    type: 'broadcast', event: 'cursor',
+                    payload: { id: myId, name: myName, x: pos.x, y: pos.y, color: colorPicker.value }
+                });
             });
         }
-
-        window.banUser = async (targetId) => {
-            const targetName = activePlayers[targetId]?.name || targetId;
-            if (confirm(`Are you sure you want to ban player ${targetName}?`)) {
-                
-                const { error } = await db.from('banned_users').insert([{ user_id: targetId, user_name: targetName }]);
-                if (error) {
-                    console.error("Ban insert error:", error);
-                    alert("Failed to insert ban into DB: " + error.message);
-                    return;
-                }
-
-                if (room) {
-                    room.send({ 
-                        type: 'broadcast', 
-                        event: 'ban_player', 
-                        payload: { id: targetId, name: targetName } 
-                    });
-                }
-                
-                const targetCursor = document.getElementById(`cursor-${targetId}`);
-                if (targetCursor) targetCursor.remove();
-                delete activePlayers[targetId];
-
-                updatePlayerListUI();
-                await fetchAndRenderBannedList();
-            }
-        };
-
-        window.unbanUser = async (targetId, targetName) => {
-            if (confirm(`Unban player ${targetName || targetId}?`)) {
-                const { error } = await db.from('banned_users').delete().eq('user_id', targetId);
-                if (error) {
-                    console.error("Unban delete error:", error);
-                    alert("Failed to delete ban from DB: " + error.message);
-                    return;
-                }
-
-                if (room) {
-                    room.send({ 
-                        type: 'broadcast', 
-                        event: 'unban_player', 
-                        payload: { id: targetId, targetName: targetName } 
-                    });
-                }
-
-                await fetchAndRenderBannedList();
-            }
-        };
-
-        setInterval(() => {
-            const now = Date.now();
-            Object.keys(activePlayers).forEach(id => {
-                if (now - activePlayers[id].lastSeen > 10000) {
-                    delete activePlayers[id];
-                    const staleCursor = document.getElementById(`cursor-${id}`);
-                    if (staleCursor) staleCursor.remove();
-                }
-            });
-            updatePlayerListUI();
-        }, 10000);
 
         async function loadSavedCanvas() {
-            const { data } = await db
-                .from('whiteboard')
-                .select('image_data')
-                .order('id', { ascending: false })
-                .limit(1);
-
-            if (data && data.length > 0 && data[0].image_data) {
+            const { data } = await db.from('whiteboard').select('image_data').eq('room_code', currentRoomCode).order('id', { ascending: false }).limit(1);
+            if (data && data.length > 0) {
                 const img = new Image();
-                img.onload = () => {
-                    if (!isBanned) ctx.drawImage(img, 0, 0);
-                };
+                img.onload = () => { if (!isBanned) dCtx.drawImage(img, 0, 0); };
                 img.src = data[0].image_data;
             }
         }
 
         async function saveToCloud() {
-            if (isBanned) return;
-            const canvasData = canvas.toDataURL(); 
-            await db.from('whiteboard').insert([{ image_data: canvasData }]);
+            if (isBanned || !currentRoomCode) return;
+            const dataUrl = drawingCanvas.toDataURL(); 
+            await db.from('whiteboard').insert([{ room_code: currentRoomCode, image_data: dataUrl }]);
         }
 
         // ==========================================
-        // INLINE CANVAS TEXT TYPING LOGIC
+        //  CANVAS DRAWING ENGINE (WITH COORD FIX)
         // ==========================================
 
-        function spawnInlineTextInput(x, y) {
-            commitInlineText(); // Save any previous text input
-
-            const fontSize = parseInt(textSizePicker.value, 10);
-            activeTextCoords = { x, y };
-
-            inlineTextInput.style.left = `${x}px`;
-            // Align baseline roughly with font top offset
-            inlineTextInput.style.top = `${y - fontSize * 0.8}px`;
-            inlineTextInput.style.fontSize = `${fontSize}px`;
-            inlineTextInput.style.color = colorPicker.value;
-            inlineTextInput.value = '';
-            
-            inlineTextInput.classList.remove('hidden');
-            inlineTextInput.focus();
+        function getMousePos(e) {
+            const rect = previewCanvas.getBoundingClientRect();
+            // Account for any CSS scaling if applied
+            const scaleX = previewCanvas.width / rect.width;
+            const scaleY = previewCanvas.height / rect.height;
+            return {
+                x: (e.clientX - rect.left) * scaleX,
+                y: (e.clientY - rect.top) * scaleY
+            };
         }
 
-        function commitInlineText() {
-            if (!activeTextCoords || inlineTextInput.classList.contains('hidden')) return;
+        let isDrawing = false;
+        let startX = 0, startY = 0, lastX = 0, lastY = 0;
+        let activeTextCoords = null;
 
-            const textValue = inlineTextInput.value.trim();
-            const fontSize = parseInt(textSizePicker.value, 10);
-
-            if (textValue && !isBanned) {
-                ctx.fillStyle = colorPicker.value;
-                ctx.font = `${fontSize}px Arial`;
-                ctx.fillText(textValue, activeTextCoords.x, activeTextCoords.y);
-
-                if (room) {
-                    room.send({
-                        type: 'broadcast', 
-                        event: 'draw',
-                        payload: { 
-                            tool: 'text', 
-                            senderId: myId, 
-                            senderName: myName, 
-                            x0: activeTextCoords.x, 
-                            y0: activeTextCoords.y, 
-                            text: textValue, 
-                            color: colorPicker.value,
-                            size: fontSize
-                        }
-                    });
-                }
-                saveToCloud();
-            }
-
-            inlineTextInput.classList.add('hidden');
-            inlineTextInput.value = '';
-            activeTextCoords = null;
-        }
-
-        inlineTextInput.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter') {
-                commitInlineText();
-            } else if (e.key === 'Escape') {
-                inlineTextInput.classList.add('hidden');
-                activeTextCoords = null;
-            }
+        toolPicker.addEventListener('change', () => {
+            commitInlineText();
+            document.getElementById('pencilSizeGroup').classList.toggle('hidden', toolPicker.value === 'text');
+            document.getElementById('textSizeGroup').classList.toggle('hidden', toolPicker.value !== 'text');
         });
 
-        // ==========================================
-        //  CANVAS DRAWING & LIVE PREVIEW ENGINE
-        // ==========================================
-
         previewCanvas.addEventListener('mousedown', (e) => {
-            if (isBanned || !startMenuModal.classList.contains('hidden')) return;
-
-            const tool = toolPicker.value;
-
-            if (tool === 'text') {
-                spawnInlineTextInput(e.clientX, e.clientY);
-                return;
+            if (isBanned) return;
+            const pos = getMousePos(e);
+            
+            if (toolPicker.value === 'text') {
+                spawnInlineText(pos.x, pos.y); return;
             }
-
-            // Click outside existing text box commits it
             commitInlineText();
-
-            isDrawing = true;
-            startX = e.clientX;
-            startY = e.clientY;
-            lastX = e.clientX;
-            lastY = e.clientY;
+            isDrawing = true; startX = pos.x; startY = pos.y; lastX = pos.x; lastY = pos.y;
         });
 
         previewCanvas.addEventListener('mousemove', (e) => {
-            if (isBanned || !startMenuModal.classList.contains('hidden')) return;
+            if (isBanned) return;
+            pCtx.clearRect(0, 0, previewCanvas.width, previewCanvas.height);
+            const pos = getMousePos(e);
             const tool = toolPicker.value;
 
-            // Clear ghost layer every frame
-            pCtx.clearRect(0, 0, previewCanvas.width, previewCanvas.height);
-
-            // Active dragging logic
             if (isDrawing) {
                 if (tool === 'pencil') {
-                    const penSize = parseInt(pencilSizePicker.value, 10);
-                    ctx.strokeStyle = colorPicker.value;
-                    ctx.lineWidth = penSize;
-                    ctx.beginPath();
-                    ctx.moveTo(lastX, lastY);
-                    ctx.lineTo(e.clientX, e.clientY);
-                    ctx.stroke();
-
-                    room.send({
-                        type: 'broadcast', event: 'draw',
-                        payload: { tool: 'pencil', senderId: myId, senderName: myName, x0: lastX, y0: lastY, x1: e.clientX, y1: e.clientY, color: colorPicker.value, size: penSize }
-                    });
+                    const penSize = parseInt(document.getElementById('pencilSizePicker').value);
+                    dCtx.strokeStyle = colorPicker.value; dCtx.lineWidth = penSize;
+                    dCtx.beginPath(); dCtx.moveTo(lastX, lastY); dCtx.lineTo(pos.x, pos.y); dCtx.stroke();
                     
-                    lastX = e.clientX;
-                    lastY = e.clientY;
+                    roomChannel.send({ type: 'broadcast', event: 'draw', payload: { tool: 'pencil', x0: lastX, y0: lastY, x1: pos.x, y1: pos.y, color: colorPicker.value, size: penSize }});
+                    lastX = pos.x; lastY = pos.y;
                 } else if (tool === 'square') {
-                    // Live shape preview
-                    pCtx.strokeStyle = colorPicker.value;
-                    pCtx.fillStyle = colorPicker.value + "44"; // Semi-transparent preview fill
-                    pCtx.lineWidth = 2;
-                    pCtx.setLineDash([6, 6]); // Dashed outline preview
-
-                    const w = e.clientX - startX;
-                    const h = e.clientY - startY;
-                    pCtx.fillRect(startX, startY, w, h);
-                    pCtx.strokeRect(startX, startY, w, h);
-                    pCtx.setLineDash([]);
+                    pCtx.strokeStyle = colorPicker.value; pCtx.fillStyle = colorPicker.value + "44"; pCtx.setLineDash([6, 6]);
+                    pCtx.fillRect(startX, startY, pos.x - startX, pos.y - startY); pCtx.strokeRect(startX, startY, pos.x - startX, pos.y - startY); pCtx.setLineDash([]);
                 } else if (tool === 'circle') {
-                    // Live circle preview
-                    pCtx.strokeStyle = colorPicker.value;
-                    pCtx.fillStyle = colorPicker.value + "44";
-                    pCtx.lineWidth = 2;
-                    pCtx.setLineDash([6, 6]);
-
-                    const radius = Math.sqrt(Math.pow(e.clientX - startX, 2) + Math.pow(e.clientY - startY, 2));
-                    pCtx.beginPath();
-                    pCtx.arc(startX, startY, radius, 0, 2 * Math.PI);
-                    pCtx.fill();
-                    pCtx.stroke();
-                    pCtx.setLineDash([]);
+                    pCtx.strokeStyle = colorPicker.value; pCtx.fillStyle = colorPicker.value + "44"; pCtx.setLineDash([6, 6]);
+                    const rad = Math.sqrt(Math.pow(pos.x - startX, 2) + Math.pow(pos.y - startY, 2));
+                    pCtx.beginPath(); pCtx.arc(startX, startY, rad, 0, 2 * Math.PI); pCtx.fill(); pCtx.stroke(); pCtx.setLineDash([]);
                 }
-            } else if (tool === 'text' && inlineTextInput.classList.contains('hidden')) {
-                // Hover text size indicator target
-                const fontSize = parseInt(textSizePicker.value, 10);
-                pCtx.strokeStyle = colorPicker.value;
-                pCtx.fillStyle = colorPicker.value + "aa";
-                pCtx.font = `${fontSize}px Arial`;
-                pCtx.fillText("T | Click to type", e.clientX, e.clientY);
-            } else if (tool === 'pencil') {
-                // Hover circle preview for pencil brush thickness
-                const penSize = parseInt(pencilSizePicker.value, 10);
-                pCtx.strokeStyle = colorPicker.value;
-                pCtx.beginPath();
-                pCtx.arc(e.clientX, e.clientY, penSize / 2, 0, 2 * Math.PI);
-                pCtx.stroke();
+            } else {
+                if (tool === 'pencil') {
+                    const penSize = parseInt(document.getElementById('pencilSizePicker').value);
+                    pCtx.strokeStyle = colorPicker.value; pCtx.beginPath(); pCtx.arc(pos.x, pos.y, penSize/2, 0, 2*Math.PI); pCtx.stroke();
+                } else if (tool === 'text' && inlineTextInput.classList.contains('hidden')) {
+                    const size = parseInt(document.getElementById('textSizePicker').value);
+                    pCtx.fillStyle = colorPicker.value + "aa"; pCtx.font = `${size}px Arial`; pCtx.fillText("T", pos.x, pos.y);
+                }
             }
         });
 
         window.addEventListener('mouseup', (e) => {
-            if (isBanned || !startMenuModal.classList.contains('hidden')) return;
-
-            // Clear preview ghost
+            if (isBanned || !isDrawing) return;
             pCtx.clearRect(0, 0, previewCanvas.width, previewCanvas.height);
-
-            if (isDrawing && toolPicker.value !== 'pencil' && toolPicker.value !== 'text') {
-                const endX = e.clientX;
-                const endY = e.clientY;
-                ctx.fillStyle = colorPicker.value;
-
-                if (toolPicker.value === 'square') {
-                    const width = endX - startX;
-                    const height = endY - startY;
-                    ctx.fillRect(startX, startY, width, height);
-                    room.send({
-                        type: 'broadcast', event: 'draw',
-                        payload: { tool: 'square', senderId: myId, senderName: myName, x0: startX, y0: startY, w: width, h: height, color: colorPicker.value }
-                    });
-                } 
-                else if (toolPicker.value === 'circle') {
-                    const radius = Math.sqrt(Math.pow(endX - startX, 2) + Math.pow(endY - startY, 2));
-                    ctx.beginPath();
-                    ctx.arc(startX, startY, radius, 0, 2 * Math.PI);
-                    ctx.fill();
-                    room.send({
-                        type: 'broadcast', event: 'draw',
-                        payload: { tool: 'circle', senderId: myId, senderName: myName, x0: startX, y0: startY, r: radius, color: colorPicker.value }
-                    });
-                }
+            const pos = getMousePos(e);
+            
+            dCtx.fillStyle = colorPicker.value;
+            if (toolPicker.value === 'square') {
+                const w = pos.x - startX, h = pos.y - startY;
+                dCtx.fillRect(startX, startY, w, h);
+                roomChannel.send({ type: 'broadcast', event: 'draw', payload: { tool: 'square', x0: startX, y0: startY, w, h, color: colorPicker.value }});
+            } else if (toolPicker.value === 'circle') {
+                const rad = Math.sqrt(Math.pow(pos.x - startX, 2) + Math.pow(pos.y - startY, 2));
+                dCtx.beginPath(); dCtx.arc(startX, startY, rad, 0, 2 * Math.PI); dCtx.fill();
+                roomChannel.send({ type: 'broadcast', event: 'draw', payload: { tool: 'circle', x0: startX, y0: startY, r: rad, color: colorPicker.value }});
             }
-
-            if (isDrawing) {
-                isDrawing = false;
-                saveToCloud();
-            }
+            isDrawing = false; saveToCloud();
         });
 
-        window.addEventListener('resize', resizeCanvases);
+        // ==========================================
+        // TEXT TOOL LOGIC
+        // ==========================================
+        function spawnInlineText(x, y) {
+            commitInlineText();
+            const size = parseInt(document.getElementById('textSizePicker').value);
+            activeTextCoords = { x, y };
+            inlineTextInput.style.left = `${x}px`; inlineTextInput.style.top = `${y - size * 0.8}px`;
+            inlineTextInput.style.fontSize = `${size}px`; inlineTextInput.style.color = colorPicker.value;
+            inlineTextInput.value = ''; inlineTextInput.classList.remove('hidden'); inlineTextInput.focus();
+        }
+        function commitInlineText() {
+            if (!activeTextCoords || inlineTextInput.classList.contains('hidden')) return;
+            const txt = inlineTextInput.value.trim();
+            const size = parseInt(document.getElementById('textSizePicker').value);
+            if (txt && !isBanned) {
+                dCtx.fillStyle = colorPicker.value; dCtx.font = `${size}px Arial`; dCtx.fillText(txt, activeTextCoords.x, activeTextCoords.y);
+                roomChannel.send({ type: 'broadcast', event: 'draw', payload: { tool: 'text', x0: activeTextCoords.x, y0: activeTextCoords.y, text: txt, color: colorPicker.value, size }});
+                saveToCloud();
+            }
+            inlineTextInput.classList.add('hidden'); activeTextCoords = null;
+        }
+        inlineTextInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') commitInlineText(); if (e.key === 'Escape') inlineTextInput.classList.add('hidden'); });
+
+        // ==========================================
+        // ADMIN PANEL
+        // ==========================================
+        const adminModal = document.getElementById('adminModal');
+        const adminLoginBox = document.getElementById('adminLoginBox');
+        const adminDashboardBox = document.getElementById('adminDashboardBox');
+
+        document.getElementById('openAdminBtn').addEventListener('click', () => {
+            adminModal.classList.remove('hidden'); adminLoginBox.classList.remove('hidden'); adminDashboardBox.classList.add('hidden');
+        });
+        document.getElementById('closeAdminLoginBtn').addEventListener('click', () => adminModal.classList.add('hidden'));
+        document.getElementById('closeAdminDashBtn').addEventListener('click', () => adminModal.classList.add('hidden'));
+
+        document.getElementById('submitAdminLoginBtn').addEventListener('click', () => {
+            if (document.getElementById('adminPasswordInput').value === currentRoomData.admin_password) {
+                adminLoginBox.classList.add('hidden'); adminDashboardBox.classList.remove('hidden');
+                document.getElementById('adminPasswordInput').value = '';
+                updatePlayerUI(); fetchBans();
+            } else { alert("Incorrect Admin Password for this room!"); }
+        });
+
+        document.getElementById('adminClearBtn').addEventListener('click', () => {
+            dCtx.clearRect(0, 0, drawingCanvas.width, drawingCanvas.height); saveToCloud();
+            roomChannel.send({ type: 'broadcast', event: 'clear' });
+        });
+
+        document.getElementById('adminFillBtn').addEventListener('click', () => {
+            const c = document.getElementById('fillColorPicker').value;
+            dCtx.fillStyle = c; dCtx.fillRect(0, 0, drawingCanvas.width, drawingCanvas.height); saveToCloud();
+            roomChannel.send({ type: 'broadcast', event: 'fill', payload: { c } });
+        });
+
+        function updatePlayerUI() {
+            const c = document.getElementById('playerListContainer'); c.innerHTML = '';
+            Object.keys(activePlayers).forEach(id => {
+                c.innerHTML += `<div style="display:flex; justify-content:space-between; margin-bottom:4px; color:white;">
+                    <span>${activePlayers[id].name}</span>
+                    ${id !== myId ? `<button class="danger-btn" style="padding:2px 6px" onclick="banUser('${id}', '${activePlayers[id].name}')">Ban</button>` : ''}
+                </div>`;
+            });
+        }
+
+        async function fetchBans() {
+            const c = document.getElementById('bannedListContainer'); c.innerHTML = 'Loading...';
+            const { data } = await db.from('banned_users').select('*').eq('room_code', currentRoomCode);
+            c.innerHTML = data && data.length ? '' : '<span style="color:#888">No bans in this room.</span>';
+            (data || []).forEach(b => {
+                c.innerHTML += `<div style="display:flex; justify-content:space-between; margin-bottom:4px; color:white;">
+                    <span>${b.user_name || b.user_id}</span>
+                    <button class="secondary-btn" style="padding:2px 6px" onclick="unbanUser('${b.user_id}')">Unban</button>
+                </div>`;
+            });
+        }
+
+        window.banUser = async (id, name) => {
+            if (confirm(`Ban ${name} from this room?`)) {
+                await db.from('banned_users').insert([{ room_code: currentRoomCode, user_id: id, user_name: name }]);
+                roomChannel.send({ type: 'broadcast', event: 'ban', payload: { id, name } });
+                fetchBans(); updatePlayerUI();
+            }
+        };
+
+        window.unbanUser = async (id) => {
+            if (confirm("Unban user?")) {
+                await db.from('banned_users').delete().eq('room_code', currentRoomCode).eq('user_id', id);
+                fetchBans();
+            }
+        };
+
+        // Clean stale players
+        setInterval(() => {
+            const now = Date.now();
+            Object.keys(activePlayers).forEach(id => {
+                if (now - activePlayers[id].lastSeen > 8000) {
+                    delete activePlayers[id];
+                    const cur = document.getElementById(`cursor-${id}`); if(cur) cur.remove();
+                }
+            });
+            if (!adminDashboardBox.classList.contains('hidden')) updatePlayerUI();
+        }, 5000);
     </script>
 </body>
 </html>
