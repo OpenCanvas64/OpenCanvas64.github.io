@@ -167,7 +167,7 @@
     </div>
 
     <script>
-        // --- 1. NEW SUPABASE CREDENTIALS ---
+        // --- 1. SUPABASE CREDENTIALS ---
         const supabaseUrl = 'https://uyvlsurevydjaxxnlyxh.supabase.co';
         const supabaseKey = 'sb_publishable_XTu1_XJMCZdkYJgeOqJjKw_MgmnLvF9'; 
         const db = window.supabase.createClient(supabaseUrl, supabaseKey);
@@ -193,7 +193,7 @@
         canvas.height = window.innerHeight;
         ctx.lineCap = 'round';
 
-        let myName = "Anonymous";
+        let myName = localStorage.getItem('canvas_user_name') || "Anonymous";
         let myId = Math.random().toString(36).substr(2, 9);
         let room;
 
@@ -202,14 +202,24 @@
         let lastX = 0, lastY = 0;
         let pendingTextCoords = { x: 0, y: 0 };
 
+        // Check if name is already saved in localStorage
+        if (localStorage.getItem('canvas_user_name')) {
+            nameInput.value = localStorage.getItem('canvas_user_name');
+            nameModal.classList.add('hidden');
+            initMultiplayer();
+        }
+
         // --- 3. MULTIPLAYER SETUP ---
         joinBtn.addEventListener('click', () => {
             myName = nameInput.value.trim() || "Anonymous";
+            localStorage.setItem('canvas_user_name', myName);
             nameModal.classList.add('hidden');
             initMultiplayer();
         });
 
         function initMultiplayer() {
+            if (room) return; // Prevent duplicate connections
+
             room = db.channel('global_whiteboard');
 
             room.on('broadcast', { event: 'draw' }, (payload) => {
@@ -231,6 +241,10 @@
 
             room.on('broadcast', { event: 'cursor' }, (payload) => {
                 const d = payload.payload;
+                
+                // IGNORE LOCAL CURSOR (Fixes random duplicate cursor bug)
+                if (d.id === myId) return;
+
                 let cursorEl = document.getElementById(`cursor-${d.id}`);
                 
                 if (!cursorEl) {
@@ -402,7 +416,19 @@
             }
         });
 
-        window.addEventListener('resize', () => window.location.reload());
+        // Dynamic resize handling without forcing page reloads
+        window.addEventListener('resize', () => {
+            const tempCanvas = document.createElement('canvas');
+            tempCanvas.width = canvas.width;
+            tempCanvas.height = canvas.height;
+            const tempCtx = tempCanvas.getContext('2d');
+            tempCtx.drawImage(canvas, 0, 0);
+
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+            ctx.lineCap = 'round';
+            ctx.drawImage(tempCanvas, 0, 0);
+        });
     </script>
 </body>
 </html>
