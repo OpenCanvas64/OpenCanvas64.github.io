@@ -492,18 +492,87 @@
             isDrawing = false; db.from('whiteboard').insert([{ room_id: currentRoomId, image_data: drawingCanvas.toDataURL() }]); // Save
         });
 
-        // --- ADMIN PANEL ---
+// --- ADMIN PANEL ---
         const adminModal = document.getElementById('adminModal');
         
+        function openAdminDashboard() {
+            document.getElementById('adminLoginBox').classList.add('hidden'); 
+            document.getElementById('adminDashboardBox').classList.remove('hidden');
+            
+            // FIX: Populate the settings fields with the current room data
+            document.getElementById('editRoomName').value = currentRoomData.room_name;
+            document.getElementById('editRoomCode').value = currentRoomData.room_code || '';
+            document.getElementById('editRoomWidth').value = currentRoomData.width;
+            document.getElementById('editRoomHeight').value = currentRoomData.height;
+            document.getElementById('editRoomVisibility').value = currentRoomData.is_public ? 'public' : 'private';
+            
+            updatePlayerUI(); 
+            fetchPunishments();
+        }
+
         document.getElementById('openAdminBtn').addEventListener('click', () => {
             adminModal.classList.remove('hidden');
             if (isDev || localStorage.getItem(`admin_${currentRoomId}`) === 'true') {
-                document.getElementById('adminLoginBox').classList.add('hidden'); document.getElementById('adminDashboardBox').classList.remove('hidden');
-                updatePlayerUI(); fetchPunishments();
-            } else { document.getElementById('adminLoginBox').classList.remove('hidden'); document.getElementById('adminDashboardBox').classList.add('hidden'); }
+                openAdminDashboard();
+            } else { 
+                document.getElementById('adminLoginBox').classList.remove('hidden'); 
+                document.getElementById('adminDashboardBox').classList.add('hidden'); 
+            }
         });
+
         document.getElementById('closeAdminLoginBtn').addEventListener('click', () => adminModal.classList.add('hidden'));
         document.getElementById('closeAdminDashBtn').addEventListener('click', () => adminModal.classList.add('hidden'));
+
+        // FIX: Re-added Admin Login submit logic
+        document.getElementById('submitAdminLoginBtn').addEventListener('click', () => {
+            if (document.getElementById('adminPasswordInput').value === currentRoomData.admin_password) {
+                document.getElementById('adminPasswordInput').value = '';
+                localStorage.setItem(`admin_${currentRoomId}`, 'true');
+                openAdminDashboard();
+            } else { alert("Incorrect Admin Password for this room!"); }
+        });
+
+        // FIX: Re-added Clear Canvas logic
+        document.getElementById('adminClearBtn').addEventListener('click', async () => {
+            dCtx.clearRect(0, 0, drawingCanvas.width, drawingCanvas.height); 
+            await db.from('whiteboard').insert([{ room_id: currentRoomId, image_data: drawingCanvas.toDataURL() }]);
+            if(roomChannel) roomChannel.send({ type: 'broadcast', event: 'clear' });
+        });
+
+        // FIX: Re-added Fill Screen logic
+        document.getElementById('adminFillBtn').addEventListener('click', async () => {
+            const c = document.getElementById('fillColorPicker').value; 
+            dCtx.fillStyle = c; 
+            dCtx.fillRect(0, 0, drawingCanvas.width, drawingCanvas.height); 
+            await db.from('whiteboard').insert([{ room_id: currentRoomId, image_data: drawingCanvas.toDataURL() }]);
+            if(roomChannel) roomChannel.send({ type: 'broadcast', event: 'fill', payload: { c } });
+        });
+
+        // FIX: Re-added Save Changes logic
+        document.getElementById('saveRoomSettingsBtn').addEventListener('click', async () => {
+            const newName = document.getElementById('editRoomName').value.trim();
+            const newCode = document.getElementById('editRoomCode').value.trim();
+            const newW = parseInt(document.getElementById('editRoomWidth').value);
+            const newH = parseInt(document.getElementById('editRoomHeight').value);
+            const isPub = document.getElementById('editRoomVisibility').value === 'public';
+
+            const { error } = await db.from('rooms').update({ room_name: newName, room_code: newCode, width: newW, height: newH, is_public: isPub }).eq('room_id', currentRoomId);
+            if(error) { 
+                alert("Failed to update (Code might be taken): " + error.message); 
+            } else {
+                currentRoomData.room_name = newName; currentRoomData.room_code = newCode; currentRoomData.width = newW; currentRoomData.height = newH; currentRoomData.is_public = isPub;
+                document.getElementById('statusText').innerText = isDev ? `🛠️ Dev View: ${newName}` : `Room: ${newName}`;
+                
+                // Keep artwork when resizing
+                const temp = dCtx.getImageData(0, 0, drawingCanvas.width, drawingCanvas.height);
+                drawingCanvas.width = newW; drawingCanvas.height = newH; previewCanvas.width = newW; previewCanvas.height = newH;
+                document.getElementById('canvasWrapper').style.width = `${newW}px`; document.getElementById('canvasWrapper').style.height = `${newH}px`;
+                dCtx.putImageData(temp, 0, 0);
+
+                if(roomChannel) roomChannel.send({ type: 'broadcast', event: 'settings_updated', payload: { name: newName, code: newCode, w: newW, h: newH }});
+                alert("Room settings updated successfully!");
+            }
+        });
 
         function getExpirationISO() {
             const mins = document.getElementById('punishDuration').value;
