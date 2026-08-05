@@ -533,13 +533,14 @@
                 }
                 localStorage.setItem('canvas_banned_map', JSON.stringify(bannedPlayers));
 
-                if (id === myId) {
+                // Clear ban status if this user was targeted or is no longer in the ban map
+                if (id === myId || !bannedPlayers[myId]) {
                     isBanned = false;
                     localStorage.removeItem('canvas_banned');
                     banOverlay.classList.add('hidden');
-                    startMenuModal.classList.remove('hidden');
-                    statusText.innerText = "Unbanned! You can now join.";
-                    statusText.style.color = "#ffaa00";
+                    
+                    alert("An administrator has unbanned you. Rejoining...");
+                    location.reload();
                 }
 
                 updateBannedListUI();
