@@ -222,7 +222,7 @@
         <div style="max-width: 400px; padding: 20px;">
             <h1>🚫 YOU ARE BANNED</h1>
             <p>An administrator has removed you from this canvas room.</p>
-            <p style="font-size: 12px; opacity: 0.8;">Your Ban ID is recorded in the central database.</p>
+            <p style="font-size: 12px; opacity: 0.8;">Your Ban is recorded in the database.</p>
         </div>
     </div>
 
@@ -274,7 +274,7 @@
 
             <label style="font-weight: bold; font-size: 13px; margin-top: 4px;">Banned Players (Database):</label>
             <div id="bannedListContainer" class="player-list">
-                <div style="color: #888; font-size: 12px; text-align: center;">No banned players</div>
+                <div style="color: #888; font-size: 12px; text-align: center;">Loading bans...</div>
             </div>
 
             <button id="closeAdminDashBtn" style="background: #888; margin-top: 8px;">Close Admin Menu</button>
@@ -371,11 +371,14 @@
             try {
                 const { data, error } = await db
                     .from('banned_users')
-                    .select('user_id')
-                    .or(`user_id.eq.${myId},user_name.ilike.${myName}`);
+                    .select('user_id, user_name');
 
                 if (data && data.length > 0) {
-                    return true;
+                    const found = data.some(b => 
+                        b.user_id === myId || 
+                        (b.user_name && b.user_name.toLowerCase() === myName.toLowerCase())
+                    );
+                    if (found) return true;
                 }
             } catch (err) {
                 console.warn("Ban check failed:", err);
@@ -416,7 +419,8 @@
         joinRoomBtn.addEventListener('click', async () => {
             const chosenName = nameInput.value.trim() || "Anonymous";
 
-            // Verify with DB before joining
+            myName = chosenName;
+
             const isDbBanned = await checkDatabaseBan();
             if (isDbBanned) {
                 triggerBanLockout();
@@ -429,7 +433,6 @@
             }
 
             nameErrorMsg.classList.add('hidden');
-            myName = chosenName;
             localStorage.setItem('canvas_user_name', myName);
             startMenuModal.classList.add('hidden');
             
@@ -518,6 +521,7 @@
 
                 delete activePlayers[id];
                 updatePlayerListUI();
+                fetchAndRenderBannedList();
 
                 if (id === myId || myName.toLowerCase() === (name || '').toLowerCase()) {
                     triggerBanLockout();
@@ -526,6 +530,8 @@
 
             room.on('broadcast', { event: 'unban_player' }, (payload) => {
                 const { id, targetName } = payload.payload;
+
+                fetchAndRenderBannedList();
 
                 if (id === myId || id === 'ALL' || (targetName && myName.toLowerCase() === targetName.toLowerCase())) {
                     isBanned = false;
@@ -603,7 +609,12 @@
 
         adminClearBansBtn.addEventListener('click', async () => {
             if (confirm("Reset and unban ALL players in Database?")) {
-                await db.from('banned_users').delete().neq('id', 0);
+                const { error } = await db.from('banned_users').delete().neq('user_id', 'NONE');
+                if (error) {
+                    console.error("Error clearing bans:", error);
+                    alert("Error clearing bans: " + error.message);
+                }
+                
                 if (room) {
                     room.send({
                         type: 'broadcast',
@@ -649,10 +660,19 @@
         async function fetchAndRenderBannedList() {
             if (adminDashboardBox.classList.contains('hidden')) return;
 
-            bannedListContainer.innerHTML = '';
+            bannedListContainer.innerHTML = '<div style="color: #888; font-size: 12px; text-align: center;">Loading bans...</div>';
+            
             const { data, error } = await db.from('banned_users').select('*');
 
-            if (error || !data || data.length === 0) {
+            bannedListContainer.innerHTML = '';
+
+            if (error) {
+                console.error("Error fetching banned users:", error);
+                bannedListContainer.innerHTML = `<div style="color: #f44336; font-size: 12px; text-align: center;">Error: ${error.message}</div>`;
+                return;
+            }
+
+            if (!data || data.length === 0) {
                 bannedListContainer.innerHTML = `<div style="color: #888; font-size: 12px; text-align: center;">No banned players in DB</div>`;
                 return;
             }
@@ -671,8 +691,13 @@
         window.banUser = async (targetId) => {
             const targetName = activePlayers[targetId]?.name || targetId;
             if (confirm(`Are you sure you want to ban player ${targetName}?`)) {
-                // Insert into Supabase banned_users table
-                await db.from('banned_users').insert([{ user_id: targetId, user_name: targetName }]);
+                
+                const { error } = await db.from('banned_users').insert([{ user_id: targetId, user_name: targetName }]);
+                if (error) {
+                    console.error("Ban insert error:", error);
+                    alert("Failed to insert ban into DB: " + error.message);
+                    return;
+                }
 
                 if (room) {
                     room.send({ 
@@ -687,14 +712,18 @@
                 delete activePlayers[targetId];
 
                 updatePlayerListUI();
-                fetchAndRenderBannedList();
+                await fetchAndRenderBannedList();
             }
         };
 
         window.unbanUser = async (targetId, targetName) => {
             if (confirm(`Unban player ${targetName || targetId}?`)) {
-                // Delete row from Supabase
-                await db.from('banned_users').delete().eq('user_id', targetId);
+                const { error } = await db.from('banned_users').delete().eq('user_id', targetId);
+                if (error) {
+                    console.error("Unban delete error:", error);
+                    alert("Failed to delete ban from DB: " + error.message);
+                    return;
+                }
 
                 if (room) {
                     room.send({ 
@@ -704,7 +733,7 @@
                     });
                 }
 
-                fetchAndRenderBannedList();
+                await fetchAndRenderBannedList();
             }
         };
 
