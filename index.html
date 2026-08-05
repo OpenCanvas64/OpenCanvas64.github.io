@@ -353,6 +353,7 @@
         let lastX = 0, lastY = 0;
         let pendingTextCoords = { x: 0, y: 0 };
         let reconnectTimeout = null;
+        let lastCursorSend = 0;
 
         nameInput.value = myName;
 
@@ -567,8 +568,11 @@
             loadSavedCanvas();
         }
 
+        // Throttled cursor broadcast to prevent rate limits
         function broadcastCursor(x, y) {
-            if (room && !isBanned) {
+            const now = Date.now();
+            if (room && !isBanned && (now - lastCursorSend > 35)) {
+                lastCursorSend = now;
                 room.send({
                     type: 'broadcast',
                     event: 'cursor',
