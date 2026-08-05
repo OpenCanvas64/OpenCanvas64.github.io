@@ -52,6 +52,26 @@
         #banOverlay { background: rgba(180, 0, 0, 0.95); color: white; z-index: 9999; text-align: center; }
         .admin-section { background: #333; padding: 12px; border-radius: 6px; display: flex; flex-direction: column; gap: 8px; }
         
+        /* PENALTY TIMER BADGE */
+        #penaltyBadge {
+            position: fixed;
+            top: 14px;
+            right: 14px;
+            background: rgba(220, 38, 38, 0.9);
+            color: #ffffff;
+            padding: 8px 14px;
+            border-radius: 20px;
+            font-size: 13px;
+            font-weight: bold;
+            z-index: 10001;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            letter-spacing: 0.5px;
+            border: 1px solid rgba(255, 255, 255, 0.3);
+        }
+
         /* CHAT STYLES */
         #chatContainer { 
             position: fixed; bottom: 20px; left: 20px; width: 320px; height: 280px; 
@@ -92,6 +112,8 @@
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>
+
+    <div id="penaltyBadge" class="hidden">⏳ PENALTY ACTIVE</div>
 
     <div id="lobbyView">
         <h1 style="margin-bottom: 20px; font-size: 36px; text-shadow: 0 4px 10px rgba(0,0,0,0.5);">🎨 OpenCanvas64</h1>
@@ -255,7 +277,9 @@
         let currentRoomId = null, currentRoomData = null, roomChannel = null;
         let activePlayers = {}; 
         let isBanned = false, isMuted = false;
-        
+        let lastMousePos = { x: 0, y: 0 };
+        let penaltyCountdownInterval = null;
+
         // Throttled Canvas Saver
         let saveTimeout = null;
         function triggerCanvasSave() {
@@ -263,15 +287,12 @@
             saveTimeout = setTimeout(async () => {
                 if (!currentRoomId) return;
                 try {
-                    // Export as compressed JPEG to avoid DB / Realtime message size limits
                     const dataUrl = drawingCanvas.toDataURL('image/jpeg', 0.7);
-                    
                     const { error } = await db.from('whiteboard').upsert(
                         { room_id: currentRoomId, image_data: dataUrl }, 
                         { onConflict: 'room_id' }
                     );
                     if (error) {
-                        // Fallback insert if upsert conflict key isn't strictly set
                         await db.from('whiteboard').insert([{ room_id: currentRoomId, image_data: dataUrl }]);
                     }
                 } catch (e) {
@@ -301,6 +322,51 @@
             el.innerText = msg;
             chatMessages.appendChild(el);
             chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+
+        // --- PENALTY COUNTDOWN TIMER LOGIC ---
+        function startPenaltyTimer(type, expiresAt) {
+            const badge = document.getElementById('penaltyBadge');
+            if (penaltyCountdownInterval) clearInterval(penaltyCountdownInterval);
+
+            if (!type) {
+                badge.classList.add('hidden');
+                return;
+            }
+
+            badge.classList.remove('hidden');
+
+            const tick = () => {
+                if (!expiresAt) {
+                    badge.innerText = `⏳ ${type.toUpperCase()}: PERMANENT`;
+                    return;
+                }
+
+                const diff = Math.max(0, Math.floor((new Date(expiresAt).getTime() - Date.now()) / 1000));
+                
+                if (diff <= 0) {
+                    clearInterval(penaltyCountdownInterval);
+                    badge.classList.add('hidden');
+                    if (type === 'MUTE') {
+                        isMuted = false;
+                        appendChat("Your mute duration has ended.", 'system');
+                    } else if (type === 'BAN') {
+                        isBanned = false;
+                        localStorage.removeItem(`banned_${currentRoomId}`);
+                        document.getElementById('banOverlay').classList.add('hidden');
+                        appendChat("Your ban duration has ended. Welcome back!", 'system');
+                        location.reload();
+                    }
+                    return;
+                }
+
+                const m = Math.floor(diff / 60);
+                const s = diff % 60;
+                badge.innerText = `⏳ ${type.toUpperCase()}: ${m}:${s < 10 ? '0' : ''}${s}`;
+            };
+
+            tick();
+            penaltyCountdownInterval = setInterval(tick, 1000);
         }
 
         // --- DEV LOGIN ---
@@ -362,7 +428,6 @@
                     </div>
                 </div>`).join('');
 
-            // Render Recent Private Rooms Safely
             const recentContainer = document.getElementById('recentRoomsList');
             const validRecent = recentRooms.filter(r => r && r.room_id);
             if (validRecent.length === 0) {
@@ -405,28 +470,48 @@
         window.joinRoomByCode = async (code) => { const { data } = await db.from('rooms').select('*').eq('room_code', code).limit(1); if (data.length) connectToRoom(data[0]); };
         window.joinRoomById = async (id) => { const { data } = await db.from('rooms').select('*').eq('room_id', id).limit(1); if (data.length) connectToRoom(data[0]); };
 
+        // --- PUNISHMENT & PERSISTENT BAN CHECK ---
         async function checkPunishments(roomId, myName) {
-            if (isDev) return { banned: false, muted: false, reason: null };
+            if (isDev) return { banned: false, muted: false, reason: null, banExpires: null, muteExpires: null };
+            
+            if (localStorage.getItem(`banned_${roomId}`) === 'true') {
+                return { banned: true, muted: false, reason: "Banned from this room.", banExpires: null, muteExpires: null };
+            }
+
             const now = new Date().toISOString();
             
-            await db.from('banned_users').delete().lt('expires_at', now);
-            await db.from('muted_users').delete().lt('expires_at', now);
+            try {
+                await db.from('banned_users').delete().lt('expires_at', now);
+                await db.from('muted_users').delete().lt('expires_at', now);
 
-            const { data: banData } = await db.from('banned_users').select('*').eq('room_id', roomId).or(`user_id.eq.${myId},user_name.ilike.${myName}`);
-            const { data: muteData } = await db.from('muted_users').select('*').eq('room_id', roomId).or(`user_id.eq.${myId},user_name.ilike.${myName}`);
-            
-            return { 
-                banned: banData && banData.length > 0, 
-                muted: muteData && muteData.length > 0,
-                reason: banData && banData.length > 0 ? banData[0].reason : null
-            };
+                const { data: banData } = await db.from('banned_users').select('*').eq('room_id', roomId);
+                const { data: muteData } = await db.from('muted_users').select('*').eq('room_id', roomId);
+                
+                const cleanName = myName.trim().toLowerCase();
+                const myBan = (banData || []).find(b => b.user_id === myId || (b.user_name && b.user_name.trim().toLowerCase() === cleanName));
+                const myMute = (muteData || []).find(m => m.user_id === myId || (m.user_name && m.user_name.trim().toLowerCase() === cleanName));
+
+                if (myBan) {
+                    localStorage.setItem(`banned_${roomId}`, 'true');
+                }
+
+                return { 
+                    banned: !!myBan, 
+                    muted: !!myMute,
+                    reason: myBan ? myBan.reason : (myMute ? myMute.reason : null),
+                    banExpires: myBan ? myBan.expires_at : null,
+                    muteExpires: myMute ? myMute.expires_at : null
+                };
+            } catch (e) {
+                console.error("Punishment verification failed:", e);
+                return { banned: false, muted: false, reason: null, banExpires: null, muteExpires: null };
+            }
         }
 
         async function connectToRoom(roomData) {
             const myName = globalNameInput.value.trim() || "Anonymous";
             currentRoomData = roomData; currentRoomId = roomData.room_id;
 
-            // Save room to recent rooms history safely
             if (!roomData.is_public) {
                 recentRooms = recentRooms.filter(r => r && r.room_id !== roomData.room_id);
                 recentRooms.unshift({ room_id: roomData.room_id, room_name: roomData.room_name || 'Private Room', room_code: roomData.room_code || 'N/A' });
@@ -436,15 +521,17 @@
 
             const pun = await checkPunishments(currentRoomId, myName);
             if (pun.banned) {
-                if(pun.reason) document.getElementById('banReasonDisplay').innerText = `Reason: ${pun.reason}`;
+                document.getElementById('banReasonDisplay').innerText = pun.reason ? `Reason: ${pun.reason}` : 'You are banned from this room.';
+                startPenaltyTimer('BAN', pun.banExpires);
                 return document.getElementById('banOverlay').classList.remove('hidden');
             }
+            
             isMuted = pun.muted;
+            if (isMuted) startPenaltyTimer('MUTE', pun.muteExpires);
 
             drawingCanvas.width = roomData.width; drawingCanvas.height = roomData.height; previewCanvas.width = roomData.width; previewCanvas.height = roomData.height;
             document.getElementById('canvasWrapper').style.width = `${roomData.width}px`; document.getElementById('canvasWrapper').style.height = `${roomData.height}px`;
             
-            // Default canvas background to white
             dCtx.fillStyle = '#ffffff';
             dCtx.fillRect(0, 0, drawingCanvas.width, drawingCanvas.height);
             dCtx.lineCap = 'round'; pCtx.lineCap = 'round';
@@ -453,7 +540,6 @@
             document.getElementById('statusText').innerText = isDev ? `🛠️ Dev View: ${roomData.room_name}` : `Room: ${roomData.room_name}`;
             if (isDev) document.getElementById('openAdminBtn').classList.add('dev-btn');
 
-            // Load latest saved canvas image from database
             try {
                 const { data: art } = await db.from('whiteboard').select('image_data').eq('room_id', currentRoomId).order('created_at', { ascending: false }).limit(1);
                 if (art && art.length && art[0].image_data) { 
@@ -469,8 +555,44 @@
             appendChat(`Welcome to ${roomData.room_name}. Type /help for commands.`, 'system');
             if (isMuted) appendChat("You are currently muted in this room (cannot speak or draw).", 'system');
 
-            roomChannel = db.channel(`room_${currentRoomId}`);
+            roomChannel = db.channel(`room_${currentRoomId}`, { config: { presence: { key: myId } } });
             
+            // --- PRESENCE EVENTS (JOIN/LEAVE CHAT & PERSISTENCE) ---
+            roomChannel
+                .on('presence', { event: 'sync' }, () => {
+                    const state = roomChannel.presenceState();
+                    Object.keys(state).forEach(key => {
+                        const presences = state[key];
+                        presences.forEach(p => {
+                            if (p.id) {
+                                activePlayers[p.id] = {
+                                    name: p.name,
+                                    ping: activePlayers[p.id]?.ping || 1
+                                };
+                            }
+                        });
+                    });
+                    if (!document.getElementById('adminDashboardBox').classList.contains('hidden')) updatePlayerUI();
+                })
+                .on('presence', { event: 'join' }, ({ key, newPresences }) => {
+                    newPresences.forEach(p => {
+                        if (p.id && p.id !== myId) {
+                            appendChat(`[System]: ${p.name || 'A player'} joined the room.`, 'system');
+                        }
+                    });
+                })
+                .on('presence', { event: 'leave' }, ({ key, leftPresences }) => {
+                    leftPresences.forEach(p => {
+                        if (p.id) {
+                            appendChat(`[System]: ${p.name || 'A player'} left the room.`, 'system');
+                            delete activePlayers[p.id];
+                            const cursorEl = document.getElementById(`cursor-${p.id}`);
+                            if (cursorEl) cursorEl.remove();
+                        }
+                    });
+                    if (!document.getElementById('adminDashboardBox').classList.contains('hidden')) updatePlayerUI();
+                });
+
             roomChannel.on('broadcast', { event: 'draw' }, (p) => {
                 if (isBanned && !isDev) return;
                 const d = p.payload; dCtx.strokeStyle = d.color; dCtx.fillStyle = d.color; dCtx.lineWidth = d.size || 5;
@@ -483,19 +605,22 @@
             roomChannel.on('broadcast', { event: 'cursor' }, (p) => {
                 const d = p.payload; 
                 const ping = Date.now() - d.ts;
-                activePlayers[d.id] = { name: d.name, lastSeen: Date.now(), ping: ping > 0 ? ping : 1 }; 
+                if (!activePlayers[d.id]) activePlayers[d.id] = { name: d.name, ping: 1 };
+                activePlayers[d.id].ping = ping > 0 ? ping : 1;
                 
                 if (d.id === myId) return;
                 let c = document.getElementById(`cursor-${d.id}`);
                 if (!c) {
                     c = document.createElement('div'); c.id = `cursor-${d.id}`; c.className = 'remote-cursor';
-                    c.innerHTML = `<div class="cursor-name">${d.name}</div><div class="cursor-pointer" style="background-color: ${d.color}"></div>`;
+                    c.innerHTML = `<div class="cursor-name">${d.name}</div><div class="cursor-pointer"></div>`;
                     document.getElementById('cursorsContainer').appendChild(c);
-                } else { c.querySelector('.cursor-name').innerText = d.name; }
+                } else { 
+                    c.querySelector('.cursor-name').innerText = d.name; 
+                }
+                c.querySelector('.cursor-pointer').style.backgroundColor = d.color;
                 c.style.left = `${d.x}px`; c.style.top = `${d.y}px`;
             });
 
-            // Live Canvas Sync Protocol (Uses compressed JPEG string to fit payload size)
             roomChannel.on('broadcast', { event: 'request_canvas_sync' }, (p) => {
                 if (p.payload.requesterId !== myId) {
                     const compressedData = drawingCanvas.toDataURL('image/jpeg', 0.6);
@@ -541,21 +666,41 @@
             roomChannel.on('broadcast', { event: 'room_deleted' }, () => { alert("Room was deleted."); location.reload(); });
             
             roomChannel.on('broadcast', { event: 'punish' }, (p) => {
-                const { id, type, reason } = p.payload;
-                if (id === myId && !isDev) {
+                const { id, name, type, reason, expires } = p.payload;
+                const isTarget = id === myId || (name && name.trim().toLowerCase() === globalNameInput.value.trim().toLowerCase());
+                
+                if (isTarget && !isDev) {
                     if (type === 'ban') { 
                         isBanned = true; 
+                        localStorage.setItem(`banned_${currentRoomId}`, 'true'); 
                         db.removeChannel(roomChannel); 
                         if(reason) document.getElementById('banReasonDisplay').innerText = `Reason: ${reason}`;
                         document.getElementById('banOverlay').classList.remove('hidden'); 
+                        startPenaltyTimer('BAN', expires);
                     }
-                    if (type === 'mute') { isMuted = true; appendChat(`You have been muted by an Admin.${reason ? ` Reason: ${reason}` : ''}`, 'system'); }
-                    if (type === 'unmute') { isMuted = false; appendChat("You have been unmuted.", 'system'); }
+                    if (type === 'unban') {
+                        isBanned = false;
+                        localStorage.removeItem(`banned_${currentRoomId}`);
+                        document.getElementById('banOverlay').classList.add('hidden');
+                        startPenaltyTimer(null);
+                        alert("You have been unbanned by the room admin.");
+                    }
+                    if (type === 'mute') { 
+                        isMuted = true; 
+                        appendChat(`You have been muted by an Admin.${reason ? ` Reason: ${reason}` : ''}`, 'system'); 
+                        startPenaltyTimer('MUTE', expires);
+                    }
+                    if (type === 'unmute') { 
+                        isMuted = false; 
+                        startPenaltyTimer(null);
+                        appendChat("You have been unmuted.", 'system'); 
+                    }
                 }
             });
 
-            roomChannel.subscribe((status) => {
+            roomChannel.subscribe(async (status) => {
                 if (status === 'SUBSCRIBED') {
+                    await roomChannel.track({ id: myId, name: myName });
                     setTimeout(() => {
                         roomChannel.send({ type: 'broadcast', event: 'request_canvas_sync', payload: { requesterId: myId } });
                     }, 500);
@@ -565,8 +710,24 @@
             window.addEventListener('mousemove', (e) => {
                 if ((isBanned && !isDev) || !roomChannel) return;
                 const rect = previewCanvas.getBoundingClientRect();
-                const x = (e.clientX - rect.left) * (previewCanvas.width / rect.width), y = (e.clientY - rect.top) * (previewCanvas.height / rect.height);
-                roomChannel.send({ type: 'broadcast', event: 'cursor', payload: { id: myId, name: myName, x, y, color: document.getElementById('colorPicker').value, ts: Date.now() } });
+                lastMousePos.x = (e.clientX - rect.left) * (previewCanvas.width / rect.width);
+                lastMousePos.y = (e.clientY - rect.top) * (previewCanvas.height / rect.height);
+                
+                roomChannel.send({ 
+                    type: 'broadcast', 
+                    event: 'cursor', 
+                    payload: { id: myId, name: myName, x: lastMousePos.x, y: lastMousePos.y, color: document.getElementById('colorPicker').value, ts: Date.now() } 
+                });
+            });
+
+            // INSTANT CURSOR COLOR UPDATE
+            document.getElementById('colorPicker').addEventListener('input', (e) => {
+                if ((isBanned && !isDev) || !roomChannel) return;
+                roomChannel.send({ 
+                    type: 'broadcast', 
+                    event: 'cursor', 
+                    payload: { id: myId, name: myName, x: lastMousePos.x, y: lastMousePos.y, color: e.target.value, ts: Date.now() } 
+                });
             });
         }
 
@@ -667,7 +828,7 @@
                         roomChannel.send({ 
                             type: 'broadcast', 
                             event: 'punish', 
-                            payload: { id: targetId, name: targetName, type: 'ban', reason: finalReason } 
+                            payload: { id: targetId, name: targetName, type: 'ban', reason: finalReason, expires: expires } 
                         });
                     }
 
@@ -736,8 +897,6 @@
             if (t === 'square') { dCtx.fillRect(startX, startY, pos.x - startX, pos.y - startY); roomChannel.send({ type: 'broadcast', event: 'draw', payload: { tool: 'square', x0: startX, y0: startY, w: pos.x - startX, h: pos.y - startY, color: c }}); }
             if (t === 'circle') { const r = Math.sqrt(Math.pow(pos.x-startX,2)+Math.pow(pos.y-startY,2)); dCtx.beginPath(); dCtx.arc(startX, startY, r, 0, 2*Math.PI); dCtx.fill(); roomChannel.send({ type: 'broadcast', event: 'draw', payload: { tool: 'circle', x0: startX, y0: startY, r, color: c }}); }
             isDrawing = false; 
-            
-            // Trigger throttled DB save to avoid spam and persistence failure
             triggerCanvasSave();
         });
 
@@ -836,15 +995,22 @@
                     expires_at: expires, 
                     reason: reason || 'No reason provided' 
                 }]);
-                if(roomChannel) roomChannel.send({ type: 'broadcast', event: 'punish', payload: { id, name, type, reason } });
+                if(roomChannel) roomChannel.send({ type: 'broadcast', event: 'punish', payload: { id, name, type, reason, expires } });
                 fetchPunishments(); updatePlayerUI();
             }
         };
 
-        window.unpunishUser = async (id, type) => {
+        window.unpunishUser = async (id, name, type) => {
             const table = type === 'ban' ? 'banned_users' : 'muted_users';
-            await db.from(table).delete().eq('room_id', currentRoomId).eq('user_id', id); 
-            if(type === 'mute' && roomChannel) roomChannel.send({ type: 'broadcast', event: 'punish', payload: { id, type: 'unmute' }});
+            await db.from(table).delete().eq('room_id', currentRoomId).or(`user_id.eq.${id},user_name.ilike.${name}`); 
+            
+            if(roomChannel) {
+                roomChannel.send({ 
+                    type: 'broadcast', 
+                    event: 'punish', 
+                    payload: { id, name, type: type === 'ban' ? 'unban' : 'unmute' }
+                });
+            }
             fetchPunishments();
         };
 
@@ -873,20 +1039,12 @@
                 const rText = d.reason ? ` - "${d.reason}"` : '';
                 c.innerHTML += `<div style="display:flex; justify-content:space-between; margin-bottom:4px; color:white;">
                     <span style="font-size:12px;">[${type.toUpperCase()}] ${d.user_name} (${exp})${rText}</span>
-                    <button class="secondary-btn icon-btn" onclick="unpunishUser('${d.user_id}', '${type}')">Undo</button>
+                    <button class="secondary-btn icon-btn" onclick="unpunishUser('${d.user_id}', '${d.user_name}', '${type}')">Undo</button>
                 </div>`;
             };
             (bData || []).forEach(d => renderRow(d, 'ban')); (mData || []).forEach(d => renderRow(d, 'mute'));
             if(c.innerHTML === '') c.innerHTML = '<span style="color:#888">No punishments.</span>';
         }
-
-        setInterval(() => {
-            const now = Date.now();
-            Object.keys(activePlayers).forEach(id => {
-                if (now - activePlayers[id].lastSeen > 8000) { delete activePlayers[id]; const cur = document.getElementById(`cursor-${id}`); if(cur) cur.remove(); }
-            });
-            if (!document.getElementById('adminDashboardBox').classList.contains('hidden')) updatePlayerUI();
-        }, 5000);
     </script>
 </body>
 </html>
