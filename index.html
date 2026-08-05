@@ -3,198 +3,60 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>OpenCanvas64 - Multi-Room</title>
+    <title>OpenCanvas64 - Pro Lobby</title>
     <style>
-        body {
-            margin: 0;
-            background-color: #2a2a2a;
-            font-family: sans-serif;
-            user-select: none;
-            overflow: auto; 
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            min-height: 100vh;
-        }
+        body { margin: 0; background-color: #2a2a2a; font-family: sans-serif; user-select: none; overflow: auto; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
         
-        /* --------------------------
-           LOBBY STYLES
-        --------------------------- */
-        #lobbyView {
-            position: fixed;
-            top: 0; left: 0; width: 100vw; height: 100vh;
-            background: #1e1e1e;
-            z-index: 2000;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            padding-top: 60px;
-            color: white;
-            overflow-y: auto;
-        }
-
-        .lobby-container {
-            width: 100%;
-            max-width: 800px;
-            background: #2a2a2a;
-            padding: 24px;
-            border-radius: 12px;
-            box-shadow: 0 8px 32px rgba(0,0,0,0.5);
-            display: flex;
-            flex-direction: column;
-            gap: 20px;
-        }
-
-        .lobby-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            border-bottom: 1px solid #444;
-            padding-bottom: 16px;
-        }
-
-        .room-list {
-            display: flex;
-            flex-direction: column;
-            gap: 8px;
-            max-height: 400px;
-            overflow-y: auto;
-        }
-
-        .room-row {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            background: #333;
-            padding: 12px 16px;
-            border-radius: 8px;
-            transition: background 0.2s;
-        }
+        /* LOBBY STYLES */
+        #lobbyView { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: #1e1e1e; z-index: 2000; display: flex; flex-direction: column; align-items: center; padding-top: 40px; color: white; overflow-y: auto; }
+        .lobby-container { width: 100%; max-width: 900px; background: #2a2a2a; padding: 24px; border-radius: 12px; box-shadow: 0 8px 32px rgba(0,0,0,0.5); display: flex; flex-direction: column; gap: 20px; margin-bottom: 40px; }
+        .lobby-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #444; padding-bottom: 16px; }
+        
+        .lobby-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+        .section-box { background: #333; padding: 16px; border-radius: 8px; display: flex; flex-direction: column; gap: 10px; max-height: 350px; overflow-y: auto; }
+        .section-box h3 { margin: 0 0 10px 0; font-size: 16px; color: #4CAF50; display: flex; justify-content: space-between; align-items: center; }
+        
+        .room-row { display: flex; justify-content: space-between; align-items: center; background: #222; padding: 10px 14px; border-radius: 6px; transition: background 0.2s; margin-bottom: 6px; }
         .room-row:hover { background: #444; }
-        .room-details { display: flex; flex-direction: column; gap: 4px; }
-        .room-title { font-size: 18px; font-weight: bold; color: #4CAF50; }
-        .room-meta { font-size: 12px; color: #aaa; }
+        .room-details { display: flex; flex-direction: column; gap: 2px; }
+        .room-title { font-size: 15px; font-weight: bold; color: #fff; }
+        .room-meta { font-size: 11px; color: #aaa; }
 
-        /* --------------------------
-           CANVAS & UI STYLES
-        --------------------------- */
-        #toolbar {
-            position: fixed;
-            top: 10px;
-            left: 50%;
-            transform: translateX(-50%);
-            background: rgba(0, 0, 0, 0.85);
-            padding: 8px 18px;
-            border-radius: 8px;
-            z-index: 100;
-            display: flex;
-            gap: 12px;
-            align-items: center;
-            color: white;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-        }
-        
+        /* CANVAS & UI STYLES */
+        #toolbar { position: fixed; top: 10px; left: 50%; transform: translateX(-50%); background: rgba(0, 0, 0, 0.85); padding: 8px 18px; border-radius: 8px; z-index: 100; display: flex; gap: 12px; align-items: center; color: white; box-shadow: 0 4px 12px rgba(0,0,0,0.3); }
         .tool-group { display: flex; align-items: center; gap: 6px; }
-
-        button, select, input {
-            padding: 8px 12px;
-            border-radius: 4px;
-            border: 1px solid #555;
-            outline: none;
-            font-size: 14px;
-            background: #fff;
-            color: #222;
-        }
-
-        button {
-            cursor: pointer;
-            background-color: #4CAF50;
-            color: white;
-            font-weight: bold;
-            border: none;
-        }
+        button, select, input { padding: 8px 12px; border-radius: 4px; border: 1px solid #555; outline: none; font-size: 14px; background: #fff; color: #222; }
+        button { cursor: pointer; background-color: #4CAF50; color: white; font-weight: bold; border: none; }
         button:hover { filter: brightness(1.1); }
         button.danger-btn { background-color: #f44336; }
         button.admin-btn { background-color: #9c27b0; }
         button.secondary-btn { background-color: #2196F3; }
+        button.icon-btn { padding: 4px 8px; font-size: 12px; }
 
-        .canvas-wrapper {
-            position: relative;
-            background: transparent;
-            box-shadow: 0 0 30px rgba(0,0,0,0.8);
-            margin: 80px 20px 20px 20px;
-        }
-
+        .canvas-wrapper { position: relative; background: transparent; box-shadow: 0 0 30px rgba(0,0,0,0.8); margin: 80px 20px 20px 20px; }
         canvas { position: absolute; top: 0; left: 0; }
         #drawingCanvas { background-color: #ffffff; z-index: 1; }
         #previewCanvas { z-index: 2; cursor: crosshair; pointer-events: auto; }
+        #inlineTextInput { position: absolute; z-index: 200; background: transparent; border: 1px dashed #2196F3; outline: none; padding: 0; margin: 0; font-family: Arial, sans-serif; color: black; line-height: 1; }
 
-        #inlineTextInput {
-            position: absolute;
-            z-index: 200;
-            background: transparent;
-            border: 1px dashed #2196F3;
-            outline: none;
-            padding: 0; margin: 0;
-            font-family: Arial, sans-serif;
-            color: black;
-            line-height: 1;
-        }
+        .remote-cursor { position: absolute; pointer-events: none; z-index: 50; transition: top 0.05s linear, left 0.05s linear; }
+        .cursor-pointer { width: 14px; height: 14px; background-color: red; border-radius: 50%; border: 2px solid white; box-shadow: 0 2px 5px rgba(0,0,0,0.4); transform: translate(-50%, -50%); }
+        .cursor-name { position: absolute; top: -24px; left: -10px; background: rgba(0,0,0,0.8); color: white; padding: 2px 6px; border-radius: 4px; font-size: 11px; white-space: nowrap; }
 
-        .remote-cursor {
-            position: absolute; pointer-events: none; z-index: 50;
-            transition: top 0.05s linear, left 0.05s linear;
-        }
-        .cursor-pointer {
-            width: 14px; height: 14px; background-color: red;
-            border-radius: 50%; border: 2px solid white;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.4);
-            transform: translate(-50%, -50%);
-        }
-        .cursor-name {
-            position: absolute; top: -24px; left: -10px;
-            background: rgba(0,0,0,0.8); color: white;
-            padding: 2px 6px; border-radius: 4px; font-size: 11px; white-space: nowrap;
-        }
-
-        .modal-overlay {
-            position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
-            background: rgba(0,0,0,0.85); display: flex; justify-content: center; align-items: center;
-            z-index: 3000;
-        }
-
-        .modal-box {
-            background: #2a2a2a; padding: 24px; border-radius: 12px;
-            display: flex; flex-direction: column; gap: 14px;
-            width: 360px; color: white;
-            box-shadow: 0 8px 32px rgba(0,0,0,0.6);
-            max-height: 90vh; overflow-y: auto;
-        }
-
+        .modal-overlay { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.85); display: flex; justify-content: center; align-items: center; z-index: 3000; }
+        .modal-box { background: #2a2a2a; padding: 24px; border-radius: 12px; display: flex; flex-direction: column; gap: 14px; width: 380px; color: white; box-shadow: 0 8px 32px rgba(0,0,0,0.6); max-height: 90vh; overflow-y: auto; }
         .modal-box h2, .modal-box h3, .modal-box h4 { margin: 0; text-align: center; color: #fff; }
         .modal-box label { font-size: 13px; color: #ccc; font-weight: bold; }
-
         .hidden { display: none !important; }
-        
-        #banOverlay {
-            background: rgba(180, 0, 0, 0.95); color: white; z-index: 9999; text-align: center;
-        }
-
-        .admin-section {
-            background: #333;
-            padding: 12px;
-            border-radius: 6px;
-            display: flex;
-            flex-direction: column;
-            gap: 8px;
-        }
+        #banOverlay { background: rgba(180, 0, 0, 0.95); color: white; z-index: 9999; text-align: center; }
+        .admin-section { background: #333; padding: 12px; border-radius: 6px; display: flex; flex-direction: column; gap: 8px; }
     </style>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>
 
     <div id="lobbyView">
-        <h1 style="margin-bottom: 30px; font-size: 42px; text-shadow: 0 4px 10px rgba(0,0,0,0.5);">🎨 OpenCanvas64</h1>
+        <h1 style="margin-bottom: 20px; font-size: 36px; text-shadow: 0 4px 10px rgba(0,0,0,0.5);">🎨 OpenCanvas64</h1>
         
         <div class="lobby-container">
             <div class="lobby-header">
@@ -205,16 +67,29 @@
                 <button id="openCreateRoomBtn" class="secondary-btn">➕ Create New Room</button>
             </div>
 
-            <div style="display: flex; justify-content: space-between; align-items: center;">
-                <h2 style="margin: 0; font-size: 20px;">🌐 Public Server Browser</h2>
+            <div style="background: #333; padding: 12px; border-radius: 8px; display: flex; justify-content: space-between; align-items: center;">
+                <span style="font-weight: bold;">🔒 Got a private join code?</span>
                 <div style="display: flex; gap: 8px;">
-                    <input type="text" id="privateCodeInput" placeholder="Room Code..." style="width: 120px;">
-                    <button id="joinPrivateBtn">Join Private</button>
+                    <input type="text" id="privateCodeInput" placeholder="Enter Room Code..." style="width: 160px;">
+                    <button id="joinPrivateBtn">Join Room</button>
                 </div>
             </div>
 
-            <div class="room-list" id="publicRoomsList">
-                <div style="text-align: center; color: #888; padding: 20px;">Loading rooms...</div>
+            <div class="lobby-grid">
+                <div class="section-box" style="grid-column: span 2;">
+                    <h3>🌐 Public Servers <button id="refreshPublicBtn" class="icon-btn secondary-btn">🔄 Refresh</button></h3>
+                    <div id="publicRoomsList">Loading...</div>
+                </div>
+
+                <div class="section-box">
+                    <h3>👑 My Created Servers</h3>
+                    <div id="myCreatedRoomsList">Loading...</div>
+                </div>
+
+                <div class="section-box">
+                    <h3>🕒 Recent Private Rooms</h3>
+                    <div id="recentRoomsList">Loading...</div>
+                </div>
             </div>
         </div>
     </div>
@@ -222,13 +97,10 @@
     <div id="createRoomModal" class="modal-overlay hidden">
         <div class="modal-box">
             <h2>➕ Create Room</h2>
-            
             <label>Room Name:</label>
             <input type="text" id="newRoomName" placeholder="e.g. Pixel Artists Hangout">
-            
-            <label>Custom Room Code (Optional):</label>
+            <label>Custom Join Code (Optional, for private):</label>
             <input type="text" id="newRoomCode" placeholder="Leave blank for random...">
-
             <div style="display: flex; gap: 12px;">
                 <div style="flex: 1; display: flex; flex-direction: column; gap: 4px;">
                     <label>Width (px):</label>
@@ -239,16 +111,13 @@
                     <input type="number" id="newRoomHeight" value="720">
                 </div>
             </div>
-
             <label>Visibility:</label>
             <select id="newRoomVisibility">
                 <option value="public">🌐 Public (Listed)</option>
-                <option value="private">🔒 Private (Hidden, Code Only)</option>
+                <option value="private">🔒 Private (Hidden, Join Code Only)</option>
             </select>
-
             <label>Admin Password:</label>
             <input type="password" id="newRoomAdminPass" placeholder="Set a secret password...">
-
             <div style="display: flex; gap: 8px; margin-top: 10px;">
                 <button id="cancelCreateRoomBtn" style="background: #666; flex: 1;">Cancel</button>
                 <button id="submitCreateRoomBtn" style="flex: 2;">Create & Join</button>
@@ -260,7 +129,6 @@
         <div id="toolbar">
             <button id="leaveRoomBtn" style="background: #555;">🏠 Leave</button>
             <div style="width: 1px; height: 24px; background: #666; margin: 0 4px;"></div>
-            
             <div class="tool-group"><input type="color" id="colorPicker" value="#000000"></div>
             <div class="tool-group">
                 <select id="toolPicker">
@@ -270,7 +138,6 @@
                     <option value="text">Text</option>
                 </select>
             </div>
-            
             <div class="tool-group" id="pencilSizeGroup">
                 <select id="pencilSizePicker">
                     <option value="2">2px</option>
@@ -288,14 +155,10 @@
                     <option value="72">72px</option>
                 </select>
             </div>
-
             <div style="width: 1px; height: 24px; background: #666; margin: 0 4px;"></div>
             <button id="openAdminBtn" class="admin-btn">Admin Menu</button>
-            <div class="tool-group" id="statusText" style="color: #ffaa00; margin-left: 8px; font-size: 12px; font-weight: bold;">
-                Connecting...
-            </div>
+            <div class="tool-group" id="statusText" style="color: #ffaa00; margin-left: 8px; font-size: 12px; font-weight: bold;">Connecting...</div>
         </div>
-
         <div class="canvas-wrapper" id="canvasWrapper">
             <canvas id="drawingCanvas"></canvas>
             <canvas id="previewCanvas"></canvas>
@@ -321,10 +184,8 @@
                 <button id="submitAdminLoginBtn" class="admin-btn">Login</button>
             </div>
         </div>
-
         <div id="adminDashboardBox" class="modal-box hidden" style="width: 440px;">
             <h3>🛠️ Room Admin Panel</h3>
-            
             <div class="admin-section">
                 <h4>🎨 Quick Actions</h4>
                 <div style="display: flex; gap: 8px;">
@@ -333,24 +194,17 @@
                     <input type="color" id="fillColorPicker" value="#ffffff" style="padding: 0; width: 40px;">
                 </div>
             </div>
-
             <div class="admin-section">
                 <h4>⚙️ Edit Room Settings</h4>
                 <div style="display: flex; flex-direction: column; gap: 6px;">
                     <label>Room Name:</label>
                     <input type="text" id="editRoomName">
-                    
+                    <label>Join Code (For Private Access):</label>
+                    <input type="text" id="editRoomCode">
                     <div style="display: flex; gap: 8px;">
-                        <div style="flex: 1;">
-                            <label>Width (px):</label>
-                            <input type="number" id="editRoomWidth" style="width: 100%;">
-                        </div>
-                        <div style="flex: 1;">
-                            <label>Height (px):</label>
-                            <input type="number" id="editRoomHeight" style="width: 100%;">
-                        </div>
+                        <div style="flex: 1;"><label>Width (px):</label><input type="number" id="editRoomWidth" style="width: 100%;"></div>
+                        <div style="flex: 1;"><label>Height (px):</label><input type="number" id="editRoomHeight" style="width: 100%;"></div>
                     </div>
-                    
                     <label>Visibility:</label>
                     <select id="editRoomVisibility">
                         <option value="public">🌐 Public (Listed)</option>
@@ -359,7 +213,6 @@
                     <button id="saveRoomSettingsBtn" class="admin-btn" style="margin-top: 6px;">Save & Broadcast Changes</button>
                 </div>
             </div>
-
             <div class="admin-section">
                 <h4>👥 Player Management</h4>
                 <label>Connected Players:</label>
@@ -367,7 +220,6 @@
                 <label style="margin-top: 10px;">Banned Players (This Room):</label>
                 <div id="bannedListContainer" style="max-height: 100px; overflow-y: auto; background: #222; padding: 6px; border-radius: 4px;"></div>
             </div>
-            
             <button id="closeAdminDashBtn" style="background: #666; margin-top: 4px;">Close Admin Panel</button>
         </div>
     </div>
@@ -380,17 +232,17 @@
         let myId = localStorage.getItem('canvas_my_id') || Math.random().toString(36).substr(2, 9);
         localStorage.setItem('canvas_my_id', myId);
         
-        let currentRoomCode = null;
+        let currentRoomId = null;
         let currentRoomData = null;
         let roomChannel = null;
         let activePlayers = {}; 
         let isBanned = false;
+        
+        let recentRooms = JSON.parse(localStorage.getItem('canvas_recent_rooms') || '[]');
 
         const lobbyView = document.getElementById('lobbyView');
         const mainAppView = document.getElementById('mainAppView');
         const globalNameInput = document.getElementById('globalNameInput');
-        const publicRoomsList = document.getElementById('publicRoomsList');
-        const createRoomModal = document.getElementById('createRoomModal');
         
         const canvasWrapper = document.getElementById('canvasWrapper');
         const drawingCanvas = document.getElementById('drawingCanvas');
@@ -404,62 +256,119 @@
         globalNameInput.value = localStorage.getItem('canvas_user_name') || "Anonymous";
         globalNameInput.addEventListener('input', (e) => localStorage.setItem('canvas_user_name', e.target.value.trim()));
 
-        async function fetchPublicRooms() {
-            publicRoomsList.innerHTML = '<div style="text-align: center; color: #888; padding: 20px;">Loading rooms...</div>';
-            const { data, error } = await db.from('rooms').select('*').eq('is_public', true).order('created_at', { ascending: false });
+        // --- LOBBY LOGIC ---
+        async function fetchLobbyData() {
+            // 1. Fetch Public Rooms
+            document.getElementById('publicRoomsList').innerHTML = '<div style="color:#888; text-align:center;">Loading...</div>';
+            const { data: pubData, error: pubErr } = await db.from('rooms').select('*').eq('is_public', true).order('created_at', { ascending: false });
             
-            if (error) { publicRoomsList.innerHTML = `<div style="color: red; padding: 10px;">Error: ${error.message}</div>`; return; }
-            publicRoomsList.innerHTML = '';
-            if (!data || data.length === 0) { publicRoomsList.innerHTML = '<div style="text-align: center; color: #888; padding: 20px;">No public rooms available. Create one!</div>'; return; }
+            if (pubErr) document.getElementById('publicRoomsList').innerHTML = `<div style="color:red;">Error: ${pubErr.message}</div>`;
+            else if (!pubData.length) document.getElementById('publicRoomsList').innerHTML = '<div style="color:#888; text-align:center;">No public servers. Create one!</div>';
+            else {
+                document.getElementById('publicRoomsList').innerHTML = pubData.map(room => `
+                    <div class="room-row">
+                        <div class="room-details">
+                            <span class="room-title">${room.room_name}</span>
+                            <span class="room-meta">Size: ${room.width}x${room.height}</span>
+                        </div>
+                        <button class="secondary-btn" onclick="joinRoomById('${room.room_id}')">Join</button>
+                    </div>`).join('');
+            }
 
-            data.forEach(room => {
-                const div = document.createElement('div'); div.className = 'room-row';
-                div.innerHTML = `
-                    <div class="room-details">
-                        <span class="room-title">${room.room_name}</span>
-                        <span class="room-meta">Code: ${room.room_code} | Size: ${room.width}x${room.height}</span>
-                    </div>
-                    <button class="secondary-btn" onclick="joinRoom('${room.room_code}')">Join</button>
-                `;
-                publicRoomsList.appendChild(div);
-            });
+            // 2. Fetch My Created Rooms
+            const { data: myData } = await db.from('rooms').select('*').eq('creator_id', myId).order('created_at', { ascending: false });
+            if (!myData || !myData.length) document.getElementById('myCreatedRoomsList').innerHTML = '<div style="color:#888; text-align:center;">You haven\'t created any rooms.</div>';
+            else {
+                document.getElementById('myCreatedRoomsList').innerHTML = myData.map(room => `
+                    <div class="room-row">
+                        <div class="room-details">
+                            <span class="room-title">${room.room_name}</span>
+                            <span class="room-meta">${room.is_public ? '🌐 Public' : '🔒 Private'} | Code: ${room.room_code || 'N/A'}</span>
+                        </div>
+                        <button class="secondary-btn" onclick="joinRoomById('${room.room_id}')">Join</button>
+                    </div>`).join('');
+            }
+
+            // 3. Render Recent Private Rooms
+            if (!recentRooms.length) document.getElementById('recentRoomsList').innerHTML = '<div style="color:#888; text-align:center;">No recent private rooms.</div>';
+            else {
+                document.getElementById('recentRoomsList').innerHTML = recentRooms.map(room => `
+                    <div class="room-row">
+                        <div class="room-details">
+                            <span class="room-title">${room.name}</span>
+                            <span class="room-meta">Code: ${room.code}</span>
+                        </div>
+                        <button class="secondary-btn" onclick="joinRoomByCode('${room.code}')">Rejoin</button>
+                    </div>`).join('');
+            }
         }
-        fetchPublicRooms();
+        
+        fetchLobbyData();
+        document.getElementById('refreshPublicBtn').addEventListener('click', fetchLobbyData);
 
+        // --- ROOM CREATION ---
+        const createRoomModal = document.getElementById('createRoomModal');
         document.getElementById('openCreateRoomBtn').addEventListener('click', () => createRoomModal.classList.remove('hidden'));
         document.getElementById('cancelCreateRoomBtn').addEventListener('click', () => createRoomModal.classList.add('hidden'));
 
         document.getElementById('submitCreateRoomBtn').addEventListener('click', async () => {
             const name = document.getElementById('newRoomName').value.trim() || "Untitled Room";
-            let code = document.getElementById('newRoomCode').value.trim();
-            if (!code) code = "room-" + Math.random().toString(36).substr(2, 6);
-            
+            let code = document.getElementById('newRoomCode').value.trim() || ("join-" + Math.random().toString(36).substr(2, 6));
             const w = parseInt(document.getElementById('newRoomWidth').value) || 1280;
             const h = parseInt(document.getElementById('newRoomHeight').value) || 720;
             const isPublic = document.getElementById('newRoomVisibility').value === 'public';
             const adminPass = document.getElementById('newRoomAdminPass').value || "1234";
+            const roomId = "srv-" + Math.random().toString(36).substr(2, 9); // Real Database ID
 
-            const { error } = await db.from('rooms').insert([{ room_code: code, room_name: name, width: w, height: h, is_public: isPublic, admin_password: adminPass }]);
+            const { error } = await db.from('rooms').insert([{ 
+                room_id: roomId, room_code: code, room_name: name, width: w, height: h, is_public: isPublic, admin_password: adminPass, creator_id: myId 
+            }]);
 
-            if (error) { alert("Failed to create room. If using a custom code, someone else might have taken it! Error: " + error.message); } 
-            else { createRoomModal.classList.add('hidden'); joinRoom(code); }
+            if (error) { alert("Failed to create room: " + error.message); } 
+            else { 
+                // Grant Automatic Admin
+                localStorage.setItem(`admin_${roomId}`, 'true');
+                createRoomModal.classList.add('hidden'); 
+                joinRoomById(roomId); 
+            }
         });
 
         document.getElementById('joinPrivateBtn').addEventListener('click', () => {
             const code = document.getElementById('privateCodeInput').value.trim();
-            if (code) joinRoom(code);
+            if (code) joinRoomByCode(code);
         });
-
         document.getElementById('leaveRoomBtn').addEventListener('click', () => location.reload());
 
-        async function joinRoom(code) {
+        // --- JOIN LOGIC ---
+        window.joinRoomByCode = async (code) => {
+            const { data, error } = await db.from('rooms').select('*').eq('room_code', code).limit(1);
+            if (error || !data.length) { alert("Invalid Room Code!"); return; }
+            addToRecent(data[0]);
+            connectToRoom(data[0]);
+        };
+
+        window.joinRoomById = async (id) => {
+            const { data, error } = await db.from('rooms').select('*').eq('room_id', id).limit(1);
+            if (error || !data.length) { alert("Room not found!"); return; }
+            if(!data[0].is_public) addToRecent(data[0]);
+            connectToRoom(data[0]);
+        };
+
+        function addToRecent(roomData) {
+            // Only store private rooms in recent
+            if(roomData.is_public) return;
+            recentRooms = recentRooms.filter(r => r.id !== roomData.room_id); // Remove dupes
+            recentRooms.unshift({ id: roomData.room_id, name: roomData.room_name, code: roomData.room_code });
+            if(recentRooms.length > 5) recentRooms.pop(); // Keep top 5
+            localStorage.setItem('canvas_recent_rooms', JSON.stringify(recentRooms));
+        }
+
+        async function connectToRoom(roomData) {
             const myName = globalNameInput.value.trim() || "Anonymous";
+            currentRoomData = roomData; currentRoomId = roomData.room_id;
 
-            const { data: roomDataArr, error: roomError } = await db.from('rooms').select('*').eq('room_code', code).limit(1);
-            if (roomError || !roomDataArr || roomDataArr.length === 0) { alert("Room not found!"); return; }
-            currentRoomData = roomDataArr[0]; currentRoomCode = code;
-
-            const { data: banData } = await db.from('banned_users').select('*').eq('room_code', code).or(`user_id.eq.${myId},user_name.ilike.${myName}`);
+            // Check Ban Status
+            const { data: banData } = await db.from('banned_users').select('*').eq('room_id', currentRoomId).or(`user_id.eq.${myId},user_name.ilike.${myName}`);
             if (banData && banData.length > 0) { document.getElementById('banOverlay').classList.remove('hidden'); return; }
 
             resizeCanvasLogic(currentRoomData.width, currentRoomData.height);
@@ -469,7 +378,7 @@
 
             loadSavedCanvas();
 
-            roomChannel = db.channel(`room_${currentRoomCode}`);
+            roomChannel = db.channel(`room_${currentRoomId}`);
             
             roomChannel.on('broadcast', { event: 'draw' }, (p) => {
                 if (isBanned) return;
@@ -500,14 +409,14 @@
                 delete activePlayers[id];
                 if (id === myId || (name && name.toLowerCase() === myName.toLowerCase())) {
                     isBanned = true; 
-                    if (roomChannel) { db.removeChannel(roomChannel); roomChannel = null; } // INSTANT DISCONNECT
+                    if (roomChannel) { db.removeChannel(roomChannel); roomChannel = null; } 
                     document.getElementById('banOverlay').classList.remove('hidden');
                 }
             });
 
             roomChannel.on('broadcast', { event: 'settings_updated' }, (p) => {
-                const { name, w, h } = p.payload;
-                currentRoomData.room_name = name;
+                const { name, code, w, h } = p.payload;
+                currentRoomData.room_name = name; currentRoomData.room_code = code;
                 document.getElementById('statusText').innerText = `Room: ${name}`;
                 resizeCanvasLogic(w, h, true);
             });
@@ -524,27 +433,22 @@
         function resizeCanvasLogic(w, h, keepArt = false) {
             let temp;
             if (keepArt) temp = dCtx.getImageData(0, 0, drawingCanvas.width, drawingCanvas.height);
-            
-            drawingCanvas.width = w; drawingCanvas.height = h;
-            previewCanvas.width = w; previewCanvas.height = h;
+            drawingCanvas.width = w; drawingCanvas.height = h; previewCanvas.width = w; previewCanvas.height = h;
             canvasWrapper.style.width = `${w}px`; canvasWrapper.style.height = `${h}px`;
             dCtx.lineCap = 'round'; pCtx.lineCap = 'round';
-
             if (keepArt && temp) dCtx.putImageData(temp, 0, 0);
         }
 
         async function loadSavedCanvas() {
-            const { data } = await db.from('whiteboard').select('image_data').eq('room_code', currentRoomCode).order('id', { ascending: false }).limit(1);
+            const { data } = await db.from('whiteboard').select('image_data').eq('room_id', currentRoomId).order('id', { ascending: false }).limit(1);
             if (data && data.length > 0) {
-                const img = new Image();
-                img.onload = () => { if (!isBanned) dCtx.drawImage(img, 0, 0); };
-                img.src = data[0].image_data;
+                const img = new Image(); img.onload = () => { if (!isBanned) dCtx.drawImage(img, 0, 0); }; img.src = data[0].image_data;
             }
         }
 
         async function saveToCloud() {
-            if (isBanned || !currentRoomCode) return;
-            await db.from('whiteboard').insert([{ room_code: currentRoomCode, image_data: drawingCanvas.toDataURL() }]);
+            if (isBanned || !currentRoomId) return;
+            await db.from('whiteboard').insert([{ room_id: currentRoomId, image_data: drawingCanvas.toDataURL() }]);
         }
 
         function getMousePos(e) {
@@ -594,8 +498,7 @@
         window.addEventListener('mouseup', (e) => {
             if (isBanned || !isDrawing) return;
             pCtx.clearRect(0, 0, previewCanvas.width, previewCanvas.height);
-            const pos = getMousePos(e);
-            dCtx.fillStyle = colorPicker.value;
+            const pos = getMousePos(e); dCtx.fillStyle = colorPicker.value;
             if (toolPicker.value === 'square') {
                 dCtx.fillRect(startX, startY, pos.x - startX, pos.y - startY);
                 if(roomChannel) roomChannel.send({ type: 'broadcast', event: 'draw', payload: { tool: 'square', x0: startX, y0: startY, w: pos.x - startX, h: pos.y - startY, color: colorPicker.value }});
@@ -623,28 +526,39 @@
         }
         inlineTextInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') commitInlineText(); if (e.key === 'Escape') inlineTextInput.classList.add('hidden'); });
 
-        // ADMIN PANEL
+        // --- ADMIN PANEL ---
         const adminModal = document.getElementById('adminModal');
         const adminLoginBox = document.getElementById('adminLoginBox');
         const adminDashboardBox = document.getElementById('adminDashboardBox');
 
+        function openAdminDashboard() {
+            adminLoginBox.classList.add('hidden'); adminDashboardBox.classList.remove('hidden');
+            document.getElementById('editRoomName').value = currentRoomData.room_name;
+            document.getElementById('editRoomCode').value = currentRoomData.room_code || '';
+            document.getElementById('editRoomWidth').value = currentRoomData.width;
+            document.getElementById('editRoomHeight').value = currentRoomData.height;
+            document.getElementById('editRoomVisibility').value = currentRoomData.is_public ? 'public' : 'private';
+            updatePlayerUI(); fetchBans();
+        }
+
         document.getElementById('openAdminBtn').addEventListener('click', () => {
-            adminModal.classList.remove('hidden'); adminLoginBox.classList.remove('hidden'); adminDashboardBox.classList.add('hidden');
+            adminModal.classList.remove('hidden');
+            // Auto-Admin Check
+            if (localStorage.getItem(`admin_${currentRoomId}`) === 'true') {
+                openAdminDashboard();
+            } else {
+                adminLoginBox.classList.remove('hidden'); adminDashboardBox.classList.add('hidden');
+            }
         });
+
         document.getElementById('closeAdminLoginBtn').addEventListener('click', () => adminModal.classList.add('hidden'));
         document.getElementById('closeAdminDashBtn').addEventListener('click', () => adminModal.classList.add('hidden'));
 
         document.getElementById('submitAdminLoginBtn').addEventListener('click', () => {
             if (document.getElementById('adminPasswordInput').value === currentRoomData.admin_password) {
-                adminLoginBox.classList.add('hidden'); adminDashboardBox.classList.remove('hidden');
                 document.getElementById('adminPasswordInput').value = '';
-                
-                document.getElementById('editRoomName').value = currentRoomData.room_name;
-                document.getElementById('editRoomWidth').value = currentRoomData.width;
-                document.getElementById('editRoomHeight').value = currentRoomData.height;
-                document.getElementById('editRoomVisibility').value = currentRoomData.is_public ? 'public' : 'private';
-
-                updatePlayerUI(); fetchBans();
+                localStorage.setItem(`admin_${currentRoomId}`, 'true'); // Save auth for this session
+                openAdminDashboard();
             } else { alert("Incorrect Admin Password for this room!"); }
         });
 
@@ -660,17 +574,18 @@
 
         document.getElementById('saveRoomSettingsBtn').addEventListener('click', async () => {
             const newName = document.getElementById('editRoomName').value.trim();
+            const newCode = document.getElementById('editRoomCode').value.trim();
             const newW = parseInt(document.getElementById('editRoomWidth').value);
             const newH = parseInt(document.getElementById('editRoomHeight').value);
             const isPub = document.getElementById('editRoomVisibility').value === 'public';
 
-            const { error } = await db.from('rooms').update({ room_name: newName, width: newW, height: newH, is_public: isPub }).eq('room_code', currentRoomCode);
-            if(error) { alert("Failed to update: " + error.message); } 
+            const { error } = await db.from('rooms').update({ room_name: newName, room_code: newCode, width: newW, height: newH, is_public: isPub }).eq('room_id', currentRoomId);
+            if(error) { alert("Failed to update (Code might be taken): " + error.message); } 
             else {
-                currentRoomData.room_name = newName; currentRoomData.width = newW; currentRoomData.height = newH;
+                currentRoomData.room_name = newName; currentRoomData.room_code = newCode; currentRoomData.width = newW; currentRoomData.height = newH; currentRoomData.is_public = isPub;
                 document.getElementById('statusText').innerText = `Room: ${newName}`;
                 resizeCanvasLogic(newW, newH, true);
-                if(roomChannel) roomChannel.send({ type: 'broadcast', event: 'settings_updated', payload: { name: newName, w: newW, h: newH }});
+                if(roomChannel) roomChannel.send({ type: 'broadcast', event: 'settings_updated', payload: { name: newName, code: newCode, w: newW, h: newH }});
                 alert("Room settings updated successfully!");
             }
         });
@@ -687,7 +602,7 @@
 
         async function fetchBans() {
             const c = document.getElementById('bannedListContainer'); c.innerHTML = 'Loading...';
-            const { data } = await db.from('banned_users').select('*').eq('room_code', currentRoomCode);
+            const { data } = await db.from('banned_users').select('*').eq('room_id', currentRoomId);
             c.innerHTML = data && data.length ? '' : '<span style="color:#888">No bans in this room.</span>';
             (data || []).forEach(b => {
                 c.innerHTML += `<div style="display:flex; justify-content:space-between; margin-bottom:4px; color:white;">
@@ -699,7 +614,7 @@
 
         window.banUser = async (id, name) => {
             if (confirm(`Ban ${name} from this room?`)) {
-                await db.from('banned_users').insert([{ room_code: currentRoomCode, user_id: id, user_name: name }]);
+                await db.from('banned_users').insert([{ room_id: currentRoomId, user_id: id, user_name: name }]);
                 if(roomChannel) roomChannel.send({ type: 'broadcast', event: 'ban', payload: { id, name } });
                 fetchBans(); updatePlayerUI();
             }
@@ -707,7 +622,7 @@
 
         window.unbanUser = async (id) => {
             if (confirm("Unban user?")) {
-                await db.from('banned_users').delete().eq('room_code', currentRoomCode).eq('user_id', id); fetchBans();
+                await db.from('banned_users').delete().eq('room_id', currentRoomId).eq('user_id', id); fetchBans();
             }
         };
 
