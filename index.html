@@ -52,12 +52,41 @@
         #banOverlay { background: rgba(180, 0, 0, 0.95); color: white; z-index: 9999; text-align: center; }
         .admin-section { background: #333; padding: 12px; border-radius: 6px; display: flex; flex-direction: column; gap: 8px; }
         
-        /* CHAT STYLES */
-        #chatContainer { position: fixed; bottom: 20px; left: 20px; width: 320px; height: 280px; background: rgba(0,0,0,0.7); border-radius: 8px; display: flex; flex-direction: column; z-index: 1000; box-shadow: 0 4px 12px rgba(0,0,0,0.5); border: 1px solid #444; }
-        #chatMessages { flex: 1; overflow-y: auto; padding: 10px; color: white; font-size: 13px; display: flex; flex-direction: column; gap: 4px; word-wrap: break-word; }
+        /* CHAT STYLES (FADING BACKGROUND) */
+        #chatContainer { 
+            position: fixed; bottom: 20px; left: 20px; width: 320px; height: 280px; 
+            display: flex; flex-direction: column; z-index: 1000; border-radius: 8px;
+            background: transparent; 
+            border: 1px solid transparent;
+            box-shadow: none; 
+            transition: all 0.3s ease; 
+        }
+        
+        #chatContainer:hover, #chatContainer:focus-within {
+            background: rgba(0,0,0,0.7);
+            border: 1px solid #444;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+        }
+
+        #chatMessages { 
+            flex: 1; overflow-y: auto; padding: 10px; color: white; font-size: 13px; 
+            display: flex; flex-direction: column; gap: 4px; word-wrap: break-word; 
+            text-shadow: 1px 1px 2px rgba(0,0,0,0.9);
+        }
         .chat-line { line-height: 1.4; }
         .chat-sys { color: #ff9800; font-style: italic; }
-        #chatInput { background: rgba(0,0,0,0.5); border: none; border-top: 1px solid #555; padding: 10px; color: white; outline: none; border-radius: 0 0 8px 8px; font-family: sans-serif; }
+        
+        #chatInput { 
+            background: transparent; 
+            border: none; border-top: 1px solid transparent; 
+            padding: 10px; color: white; outline: none; border-radius: 0 0 8px 8px; font-family: sans-serif; 
+            transition: all 0.3s ease;
+        }
+
+        #chatContainer:hover #chatInput, #chatContainer:focus-within #chatInput {
+            background: rgba(0,0,0,0.5);
+            border-top: 1px solid #555;
+        }
     </style>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
@@ -252,7 +281,6 @@
         window.deleteRoom = async (roomId) => {
             if(!confirm("Are you sure you want to permanently delete this room?")) return;
             await db.from('rooms').delete().eq('room_id', roomId);
-            // Broadcast delete event if active
             const tempChan = db.channel(`room_${roomId}`);
             tempChan.subscribe((status) => {
                 if(status === 'SUBSCRIBED') {
@@ -297,6 +325,21 @@
                         <button class="secondary-btn" onclick="joinRoomById('${room.room_id}')">Join</button>
                     </div>
                 </div>`).join('');
+
+            // FIX: Render Recent Private Rooms
+            const recentContainer = document.getElementById('recentRoomsList');
+            if (recentRooms.length === 0) {
+                recentContainer.innerHTML = '<span style="color:#888;">No recent rooms...</span>';
+            } else {
+                recentContainer.innerHTML = recentRooms.map(room => `
+                    <div class="room-row">
+                        <div class="room-details">
+                            <span class="room-title">${room.room_name}</span>
+                            <span class="room-meta">Code: ${room.room_code || 'N/A'}</span>
+                        </div>
+                        <button class="secondary-btn" onclick="joinRoomById('${room.room_id}')">Join</button>
+                    </div>`).join('');
+            }
         }
         fetchLobbyData(); document.getElementById('refreshPublicBtn').addEventListener('click', fetchLobbyData);
 
@@ -329,7 +372,6 @@
             if (isDev) return { banned: false, muted: false };
             const now = new Date().toISOString();
             
-            // Clean up expired punishments before checking
             await db.from('banned_users').delete().lt('expires_at', now);
             await db.from('muted_users').delete().lt('expires_at', now);
 
@@ -342,6 +384,14 @@
         async function connectToRoom(roomData) {
             const myName = globalNameInput.value.trim() || "Anonymous";
             currentRoomData = roomData; currentRoomId = roomData.room_id;
+
+            // FIX: Save room to recent rooms history
+            if (!roomData.is_public) {
+                recentRooms = recentRooms.filter(r => r.room_id !== roomData.room_id);
+                recentRooms.unshift({ room_id: roomData.room_id, room_name: roomData.room_name, room_code: roomData.room_code });
+                if (recentRooms.length > 5) recentRooms.pop();
+                localStorage.setItem('canvas_recent_rooms', JSON.stringify(recentRooms));
+            }
 
             const pun = await checkPunishments(currentRoomId, myName);
             if (pun.banned) return document.getElementById('banOverlay').classList.remove('hidden');
@@ -374,7 +424,6 @@
 
             roomChannel.on('broadcast', { event: 'cursor' }, (p) => {
                 const d = p.payload; 
-                // Calculate Ping based on timestamp attached to cursor
                 const ping = Date.now() - d.ts;
                 activePlayers[d.id] = { name: d.name, lastSeen: Date.now(), ping: ping > 0 ? ping : 1 }; 
                 
@@ -442,12 +491,11 @@
 
             if (isMuted) return appendChat("You are muted and cannot speak.", 'system');
             
-            // Send standard chat
             roomChannel.send({ type: 'broadcast', event: 'chat', payload: { name: globalNameInput.value, msg } });
             appendChat(`[${globalNameInput.value}]: ${msg}`);
         });
 
-        // --- DRAWING LOGIC (Compact) ---
+        // --- DRAWING LOGIC ---
         let isDrawing = false, startX = 0, startY = 0, lastX = 0, lastY = 0;
         function getMouse(e) { const r = previewCanvas.getBoundingClientRect(); return { x: (e.clientX - r.left) * (previewCanvas.width / r.width), y: (e.clientY - r.top) * (previewCanvas.height / r.height) }; }
         
@@ -489,17 +537,16 @@
             if (!isDrawing) return; const pos = getMouse(e), t = document.getElementById('toolPicker').value, c = document.getElementById('colorPicker').value; dCtx.fillStyle = c;
             if (t === 'square') { dCtx.fillRect(startX, startY, pos.x - startX, pos.y - startY); roomChannel.send({ type: 'broadcast', event: 'draw', payload: { tool: 'square', x0: startX, y0: startY, w: pos.x - startX, h: pos.y - startY, color: c }}); }
             if (t === 'circle') { const r = Math.sqrt(Math.pow(pos.x-startX,2)+Math.pow(pos.y-startY,2)); dCtx.beginPath(); dCtx.arc(startX, startY, r, 0, 2*Math.PI); dCtx.fill(); roomChannel.send({ type: 'broadcast', event: 'draw', payload: { tool: 'circle', x0: startX, y0: startY, r, color: c }}); }
-            isDrawing = false; db.from('whiteboard').insert([{ room_id: currentRoomId, image_data: drawingCanvas.toDataURL() }]); // Save
+            isDrawing = false; db.from('whiteboard').insert([{ room_id: currentRoomId, image_data: drawingCanvas.toDataURL() }]);
         });
 
-// --- ADMIN PANEL ---
+        // --- ADMIN PANEL ---
         const adminModal = document.getElementById('adminModal');
         
         function openAdminDashboard() {
             document.getElementById('adminLoginBox').classList.add('hidden'); 
             document.getElementById('adminDashboardBox').classList.remove('hidden');
             
-            // FIX: Populate the settings fields with the current room data
             document.getElementById('editRoomName').value = currentRoomData.room_name;
             document.getElementById('editRoomCode').value = currentRoomData.room_code || '';
             document.getElementById('editRoomWidth').value = currentRoomData.width;
@@ -523,7 +570,6 @@
         document.getElementById('closeAdminLoginBtn').addEventListener('click', () => adminModal.classList.add('hidden'));
         document.getElementById('closeAdminDashBtn').addEventListener('click', () => adminModal.classList.add('hidden'));
 
-        // FIX: Re-added Admin Login submit logic
         document.getElementById('submitAdminLoginBtn').addEventListener('click', () => {
             if (document.getElementById('adminPasswordInput').value === currentRoomData.admin_password) {
                 document.getElementById('adminPasswordInput').value = '';
@@ -532,14 +578,12 @@
             } else { alert("Incorrect Admin Password for this room!"); }
         });
 
-        // FIX: Re-added Clear Canvas logic
         document.getElementById('adminClearBtn').addEventListener('click', async () => {
             dCtx.clearRect(0, 0, drawingCanvas.width, drawingCanvas.height); 
             await db.from('whiteboard').insert([{ room_id: currentRoomId, image_data: drawingCanvas.toDataURL() }]);
             if(roomChannel) roomChannel.send({ type: 'broadcast', event: 'clear' });
         });
 
-        // FIX: Re-added Fill Screen logic
         document.getElementById('adminFillBtn').addEventListener('click', async () => {
             const c = document.getElementById('fillColorPicker').value; 
             dCtx.fillStyle = c; 
@@ -548,7 +592,6 @@
             if(roomChannel) roomChannel.send({ type: 'broadcast', event: 'fill', payload: { c } });
         });
 
-        // FIX: Re-added Save Changes logic
         document.getElementById('saveRoomSettingsBtn').addEventListener('click', async () => {
             const newName = document.getElementById('editRoomName').value.trim();
             const newCode = document.getElementById('editRoomCode').value.trim();
@@ -563,7 +606,6 @@
                 currentRoomData.room_name = newName; currentRoomData.room_code = newCode; currentRoomData.width = newW; currentRoomData.height = newH; currentRoomData.is_public = isPub;
                 document.getElementById('statusText').innerText = isDev ? `🛠️ Dev View: ${newName}` : `Room: ${newName}`;
                 
-                // Keep artwork when resizing
                 const temp = dCtx.getImageData(0, 0, drawingCanvas.width, drawingCanvas.height);
                 drawingCanvas.width = newW; drawingCanvas.height = newH; previewCanvas.width = newW; previewCanvas.height = newH;
                 document.getElementById('canvasWrapper').style.width = `${newW}px`; document.getElementById('canvasWrapper').style.height = `${newH}px`;
