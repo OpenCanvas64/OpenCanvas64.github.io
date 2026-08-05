@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>OpenCanvas64 - Realtime Canvas with Shape Preview</title>
+    <title>OpenCanvas64 - Realtime Canvas</title>
     <link rel="icon" type="image/x-icon" href="/favicon.ico">
     <style>
         body {
@@ -78,6 +78,20 @@
             z-index: 2;
             cursor: crosshair;
             pointer-events: auto;
+        }
+
+        /* Inline Text Input overlay */
+        #inlineTextInput {
+            position: absolute;
+            z-index: 200;
+            background: transparent;
+            border: 1px dashed #2196F3;
+            outline: none;
+            padding: 0;
+            margin: 0;
+            font-family: Arial, sans-serif;
+            color: black;
+            line-height: 1;
         }
 
         .remote-cursor {
@@ -212,6 +226,31 @@
                 <option value="text">Text</option>
             </select>
         </div>
+        
+        <div class="tool-group" id="pencilSizeGroup">
+            <label>Pencil Size:</label>
+            <select id="pencilSizePicker">
+                <option value="2">2px</option>
+                <option value="5" selected>5px</option>
+                <option value="10">10px</option>
+                <option value="20">20px</option>
+                <option value="40">40px</option>
+            </select>
+        </div>
+
+        <div class="tool-group hidden" id="textSizeGroup">
+            <label>Text Size:</label>
+            <select id="textSizePicker">
+                <option value="12">12px</option>
+                <option value="16">16px</option>
+                <option value="20" selected>20px</option>
+                <option value="28">28px</option>
+                <option value="36">36px</option>
+                <option value="48">48px</option>
+                <option value="72">72px</option>
+            </select>
+        </div>
+
         <button id="openChangeNameBtn" class="secondary-btn">Change Name</button>
         <button id="openAdminBtn" class="admin-btn">Admin Menu</button>
         <div class="tool-group" id="statusText" style="color: #ffaa00; margin-left: 8px;">
@@ -222,6 +261,7 @@
     <div class="canvas-container">
         <canvas id="drawingCanvas"></canvas>
         <canvas id="previewCanvas"></canvas>
+        <input type="text" id="inlineTextInput" class="hidden">
     </div>
 
     <div id="cursorsContainer"></div>
@@ -291,17 +331,6 @@
         </div>
     </div>
 
-    <div id="textModal" class="modal-overlay hidden">
-        <div class="modal-box">
-            <h3>Add Text to Canvas</h3>
-            <input type="text" id="canvasTextInput" placeholder="Type text here...">
-            <div style="display: flex; gap: 8px; justify-content: flex-end;">
-                <button id="cancelTextBtn" style="background: #888;">Cancel</button>
-                <button id="submitTextBtn">Place Text</button>
-            </div>
-        </div>
-    </div>
-
     <script>
         // Supabase Credentials
         const supabaseUrl = 'https://uyvlsurevydjaxxnlyxh.supabase.co';
@@ -313,11 +342,16 @@
         const ctx = canvas.getContext('2d');
         const previewCanvas = document.getElementById('previewCanvas');
         const pCtx = previewCanvas.getContext('2d');
+        const inlineTextInput = document.getElementById('inlineTextInput');
 
         // UI References
         const statusText = document.getElementById('statusText');
         const colorPicker = document.getElementById('colorPicker');
         const toolPicker = document.getElementById('toolPicker');
+        const pencilSizePicker = document.getElementById('pencilSizePicker');
+        const textSizePicker = document.getElementById('textSizePicker');
+        const pencilSizeGroup = document.getElementById('pencilSizeGroup');
+        const textSizeGroup = document.getElementById('textSizeGroup');
         const cursorsContainer = document.getElementById('cursorsContainer');
         const pingDisplay = document.getElementById('pingDisplay');
 
@@ -346,10 +380,17 @@
         const playerListContainer = document.getElementById('playerListContainer');
         const bannedListContainer = document.getElementById('bannedListContainer');
 
-        const textModal = document.getElementById('textModal');
-        const canvasTextInput = document.getElementById('canvasTextInput');
-        const submitTextBtn = document.getElementById('submitTextBtn');
-        const cancelTextBtn = document.getElementById('cancelTextBtn');
+        // Toggle size pickers based on selected tool
+        toolPicker.addEventListener('change', () => {
+            commitInlineText(); // Save any pending text input if switching tools
+            if (toolPicker.value === 'text') {
+                pencilSizeGroup.classList.add('hidden');
+                textSizeGroup.classList.remove('hidden');
+            } else {
+                pencilSizeGroup.classList.remove('hidden');
+                textSizeGroup.classList.add('hidden');
+            }
+        });
 
         // Initialize Canvas Dimensions
         function resizeCanvases() {
@@ -387,7 +428,7 @@
         let isDrawing = false;
         let startX = 0, startY = 0;
         let lastX = 0, lastY = 0;
-        let pendingTextCoords = { x: 0, y: 0 };
+        let activeTextCoords = null;
         let reconnectTimeout = null;
         let lastCursorSend = 0;
 
@@ -426,7 +467,7 @@
             banOverlay.classList.remove('hidden');
             startMenuModal.classList.add('hidden');
             adminModal.classList.add('hidden');
-            textModal.classList.add('hidden');
+            inlineTextInput.classList.add('hidden');
             statusText.innerText = "Banned";
             statusText.style.color = "#ff4444";
         }
@@ -498,7 +539,7 @@
 
                 ctx.strokeStyle = d.color;
                 ctx.fillStyle = d.color;
-                ctx.lineWidth = 5;
+                ctx.lineWidth = d.size || 5;
 
                 if (d.tool === 'pencil') {
                     ctx.beginPath(); ctx.moveTo(d.x0, d.y0); ctx.lineTo(d.x1, d.y1); ctx.stroke();
@@ -507,7 +548,9 @@
                 } else if (d.tool === 'circle') {
                     ctx.beginPath(); ctx.arc(d.x0, d.y0, d.r, 0, 2 * Math.PI); ctx.fill();
                 } else if (d.tool === 'text') {
-                    ctx.font = "20px Arial"; ctx.fillText(d.text, d.x0, d.y0);
+                    const fontSize = d.size || 20;
+                    ctx.font = `${fontSize}px Arial`; 
+                    ctx.fillText(d.text, d.x0, d.y0);
                 }
             });
 
@@ -810,44 +853,93 @@
         }
 
         // ==========================================
+        // INLINE CANVAS TEXT TYPING LOGIC
+        // ==========================================
+
+        function spawnInlineTextInput(x, y) {
+            commitInlineText(); // Save any previous text input
+
+            const fontSize = parseInt(textSizePicker.value, 10);
+            activeTextCoords = { x, y };
+
+            inlineTextInput.style.left = `${x}px`;
+            // Align baseline roughly with font top offset
+            inlineTextInput.style.top = `${y - fontSize * 0.8}px`;
+            inlineTextInput.style.fontSize = `${fontSize}px`;
+            inlineTextInput.style.color = colorPicker.value;
+            inlineTextInput.value = '';
+            
+            inlineTextInput.classList.remove('hidden');
+            inlineTextInput.focus();
+        }
+
+        function commitInlineText() {
+            if (!activeTextCoords || inlineTextInput.classList.contains('hidden')) return;
+
+            const textValue = inlineTextInput.value.trim();
+            const fontSize = parseInt(textSizePicker.value, 10);
+
+            if (textValue && !isBanned) {
+                ctx.fillStyle = colorPicker.value;
+                ctx.font = `${fontSize}px Arial`;
+                ctx.fillText(textValue, activeTextCoords.x, activeTextCoords.y);
+
+                if (room) {
+                    room.send({
+                        type: 'broadcast', 
+                        event: 'draw',
+                        payload: { 
+                            tool: 'text', 
+                            senderId: myId, 
+                            senderName: myName, 
+                            x0: activeTextCoords.x, 
+                            y0: activeTextCoords.y, 
+                            text: textValue, 
+                            color: colorPicker.value,
+                            size: fontSize
+                        }
+                    });
+                }
+                saveToCloud();
+            }
+
+            inlineTextInput.classList.add('hidden');
+            inlineTextInput.value = '';
+            activeTextCoords = null;
+        }
+
+        inlineTextInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                commitInlineText();
+            } else if (e.key === 'Escape') {
+                inlineTextInput.classList.add('hidden');
+                activeTextCoords = null;
+            }
+        });
+
+        // ==========================================
         //  CANVAS DRAWING & LIVE PREVIEW ENGINE
         // ==========================================
 
         previewCanvas.addEventListener('mousedown', (e) => {
             if (isBanned || !startMenuModal.classList.contains('hidden')) return;
+
+            const tool = toolPicker.value;
+
+            if (tool === 'text') {
+                spawnInlineTextInput(e.clientX, e.clientY);
+                return;
+            }
+
+            // Click outside existing text box commits it
+            commitInlineText();
+
             isDrawing = true;
             startX = e.clientX;
             startY = e.clientY;
             lastX = e.clientX;
             lastY = e.clientY;
-
-            if (toolPicker.value === 'text') {
-                isDrawing = false;
-                pendingTextCoords = { x: startX, y: startY };
-                canvasTextInput.value = '';
-                textModal.classList.remove('hidden');
-                canvasTextInput.focus();
-            }
         });
-
-        submitTextBtn.addEventListener('click', () => {
-            const userInput = canvasTextInput.value.trim();
-            if (userInput && !isBanned) {
-                ctx.fillStyle = colorPicker.value;
-                ctx.font = "20px Arial";
-                ctx.fillText(userInput, pendingTextCoords.x, pendingTextCoords.y);
-                
-                room.send({
-                    type: 'broadcast', event: 'draw',
-                    payload: { tool: 'text', senderId: myId, senderName: myName, x0: pendingTextCoords.x, y0: pendingTextCoords.y, text: userInput, color: colorPicker.value }
-                });
-                saveToCloud();
-            }
-            pCtx.clearRect(0, 0, previewCanvas.width, previewCanvas.height);
-            textModal.classList.add('hidden');
-        });
-
-        cancelTextBtn.addEventListener('click', () => textModal.classList.add('hidden'));
 
         previewCanvas.addEventListener('mousemove', (e) => {
             if (isBanned || !startMenuModal.classList.contains('hidden')) return;
@@ -859,8 +951,9 @@
             // Active dragging logic
             if (isDrawing) {
                 if (tool === 'pencil') {
+                    const penSize = parseInt(pencilSizePicker.value, 10);
                     ctx.strokeStyle = colorPicker.value;
-                    ctx.lineWidth = 5;
+                    ctx.lineWidth = penSize;
                     ctx.beginPath();
                     ctx.moveTo(lastX, lastY);
                     ctx.lineTo(e.clientX, e.clientY);
@@ -868,13 +961,13 @@
 
                     room.send({
                         type: 'broadcast', event: 'draw',
-                        payload: { tool: 'pencil', senderId: myId, senderName: myName, x0: lastX, y0: lastY, x1: e.clientX, y1: e.clientY, color: colorPicker.value }
+                        payload: { tool: 'pencil', senderId: myId, senderName: myName, x0: lastX, y0: lastY, x1: e.clientX, y1: e.clientY, color: colorPicker.value, size: penSize }
                     });
                     
                     lastX = e.clientX;
                     lastY = e.clientY;
                 } else if (tool === 'square') {
-                    // Live shape preview on previewCanvas
+                    // Live shape preview
                     pCtx.strokeStyle = colorPicker.value;
                     pCtx.fillStyle = colorPicker.value + "44"; // Semi-transparent preview fill
                     pCtx.lineWidth = 2;
@@ -884,9 +977,9 @@
                     const h = e.clientY - startY;
                     pCtx.fillRect(startX, startY, w, h);
                     pCtx.strokeRect(startX, startY, w, h);
-                    pCtx.setLineDash([]); // Reset line dash
+                    pCtx.setLineDash([]);
                 } else if (tool === 'circle') {
-                    // Live circle preview on previewCanvas
+                    // Live circle preview
                     pCtx.strokeStyle = colorPicker.value;
                     pCtx.fillStyle = colorPicker.value + "44";
                     pCtx.lineWidth = 2;
@@ -899,12 +992,20 @@
                     pCtx.stroke();
                     pCtx.setLineDash([]);
                 }
-            } else if (tool === 'text') {
-                // Show a text placement indicator target
+            } else if (tool === 'text' && inlineTextInput.classList.contains('hidden')) {
+                // Hover text size indicator target
+                const fontSize = parseInt(textSizePicker.value, 10);
                 pCtx.strokeStyle = colorPicker.value;
                 pCtx.fillStyle = colorPicker.value + "aa";
-                pCtx.font = "20px Arial";
+                pCtx.font = `${fontSize}px Arial`;
                 pCtx.fillText("T | Click to type", e.clientX, e.clientY);
+            } else if (tool === 'pencil') {
+                // Hover circle preview for pencil brush thickness
+                const penSize = parseInt(pencilSizePicker.value, 10);
+                pCtx.strokeStyle = colorPicker.value;
+                pCtx.beginPath();
+                pCtx.arc(e.clientX, e.clientY, penSize / 2, 0, 2 * Math.PI);
+                pCtx.stroke();
             }
         });
 
