@@ -3,8 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Multiplayer Canvas - Supabase Edition</title>
-    <link rel="icon" type="image/x-icon" href="favicon.ico">
+    <title>OpenCanvas64 - Realtime Canvas</title>
+    <link rel="icon" type="image/x-icon" href="/favicon.ico">
     <style>
         body {
             margin: 0;
@@ -533,7 +533,6 @@
                 }
                 localStorage.setItem('canvas_banned_map', JSON.stringify(bannedPlayers));
 
-                // Clear ban status if this user was targeted or is no longer in the ban map
                 if (id === myId || !bannedPlayers[myId]) {
                     isBanned = false;
                     localStorage.removeItem('canvas_banned');
