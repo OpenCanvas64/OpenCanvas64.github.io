@@ -222,8 +222,7 @@
         <div style="max-width: 400px; padding: 20px;">
             <h1>🚫 YOU ARE BANNED</h1>
             <p>An administrator has removed you from this canvas room.</p>
-            <p style="font-size: 12px; opacity: 0.8;">Drawing and room access have been disabled.</p>
-            <button id="manualUnbanCheckBtn" style="margin-top: 15px; background: #ffffff; color: #b40000; font-weight: bold; padding: 8px 16px;">Clear Local Ban & Rejoin</button>
+            <p style="font-size: 12px; opacity: 0.8;">Your Ban ID is recorded in the central database.</p>
         </div>
     </div>
 
@@ -232,7 +231,7 @@
             <h2 id="modalTitle">🎨 Canvas Room</h2>
             <label style="font-weight: bold; font-size: 13px;">Enter Your Name:</label>
             <input type="text" id="nameInput" placeholder="Name..." value="Anonymous">
-            <div id="nameErrorMsg" class="error-msg hidden">That name is already taken!</div>
+            <div id="nameErrorMsg" class="error-msg hidden">That name is taken or banned!</div>
             <div style="display: flex; gap: 8px;">
                 <button id="cancelNameBtn" style="background: #888; flex: 1;" class="hidden">Cancel</button>
                 <button id="joinRoomBtn" style="padding: 10px; font-size: 16px; flex: 2;">Join Canvas</button>
@@ -255,7 +254,7 @@
             
             <div style="display: flex; gap: 8px;">
                 <button id="adminClearBtn" class="danger-btn" style="flex: 1;">Clear Canvas</button>
-                <button id="adminClearBansBtn" class="secondary-btn" style="flex: 1; background: #ff9800;">Clear All Bans</button>
+                <button id="adminClearBansBtn" class="secondary-btn" style="flex: 1; background: #ff9800;">Clear All DB Bans</button>
             </div>
 
             <hr style="width: 100%; border: 0; border-top: 1px solid #ddd; margin: 4px 0;">
@@ -273,7 +272,7 @@
                 <div style="color: #888; font-size: 12px; text-align: center;">No active players</div>
             </div>
 
-            <label style="font-weight: bold; font-size: 13px; margin-top: 4px;">Banned Players:</label>
+            <label style="font-weight: bold; font-size: 13px; margin-top: 4px;">Banned Players (Database):</label>
             <div id="bannedListContainer" class="player-list">
                 <div style="color: #888; font-size: 12px; text-align: center;">No banned players</div>
             </div>
@@ -309,7 +308,6 @@
         const pingDisplay = document.getElementById('pingDisplay');
 
         const banOverlay = document.getElementById('banOverlay');
-        const manualUnbanCheckBtn = document.getElementById('manualUnbanCheckBtn');
         const startMenuModal = document.getElementById('startMenuModal');
         const modalTitle = document.getElementById('modalTitle');
         const nameInput = document.getElementById('nameInput');
@@ -349,8 +347,7 @@
 
         let room;
         let activePlayers = {}; 
-        let bannedPlayers = JSON.parse(localStorage.getItem('canvas_banned_map') || '{}'); 
-        let isBanned = localStorage.getItem('canvas_banned') === 'true' || !!bannedPlayers[myId];
+        let isBanned = false;
 
         let isDrawing = false;
         let startX = 0, startY = 0;
@@ -361,40 +358,39 @@
 
         nameInput.value = myName;
 
-        if (isBanned) {
-            triggerBanLockout();
-        } else {
-            initMultiplayer();
+        // Startup: Verify Ban Status via Database
+        checkDatabaseBan().then(banned => {
+            if (banned) {
+                triggerBanLockout();
+            } else {
+                initMultiplayer();
+            }
+        });
+
+        async function checkDatabaseBan() {
+            try {
+                const { data, error } = await db
+                    .from('banned_users')
+                    .select('user_id')
+                    .or(`user_id.eq.${myId},user_name.ilike.${myName}`);
+
+                if (data && data.length > 0) {
+                    return true;
+                }
+            } catch (err) {
+                console.warn("Ban check failed:", err);
+            }
+            return false;
         }
 
         function triggerBanLockout() {
             isBanned = true;
-            localStorage.setItem('canvas_banned', 'true');
             banOverlay.classList.remove('hidden');
             startMenuModal.classList.add('hidden');
             adminModal.classList.add('hidden');
             textModal.classList.add('hidden');
             statusText.innerText = "Banned";
             statusText.style.color = "#ff4444";
-        }
-
-        function forceUnbanMe() {
-            isBanned = false;
-            localStorage.removeItem('canvas_banned');
-            localStorage.removeItem('canvas_banned_map');
-            bannedPlayers = {};
-            banOverlay.classList.add('hidden');
-            location.reload();
-        }
-
-        manualUnbanCheckBtn.addEventListener('click', () => {
-            forceUnbanMe();
-        });
-
-        function isNameOrIdBanned(id, name) {
-            if (bannedPlayers[id]) return true;
-            const lowerName = (name || '').toLowerCase();
-            return Object.values(bannedPlayers).some(bannedName => bannedName.toLowerCase() === lowerName);
         }
 
         function measurePing() {
@@ -417,12 +413,12 @@
             });
         }
 
-        joinRoomBtn.addEventListener('click', () => {
-            if (isBanned) return;
-
+        joinRoomBtn.addEventListener('click', async () => {
             const chosenName = nameInput.value.trim() || "Anonymous";
 
-            if (isNameOrIdBanned(myId, chosenName)) {
+            // Verify with DB before joining
+            const isDbBanned = await checkDatabaseBan();
+            if (isDbBanned) {
                 triggerBanLockout();
                 return;
             }
@@ -463,8 +459,6 @@
                 if (isBanned) return;
                 const d = payload.payload;
 
-                if (isNameOrIdBanned(d.senderId, d.senderName || '')) return;
-
                 ctx.strokeStyle = d.color;
                 ctx.fillStyle = d.color;
                 ctx.lineWidth = 5;
@@ -482,8 +476,6 @@
 
             room.on('broadcast', { event: 'cursor' }, (payload) => {
                 const d = payload.payload;
-                
-                if (isNameOrIdBanned(d.id, d.name)) return;
 
                 activePlayers[d.id] = { name: d.name, lastSeen: Date.now() };
                 updatePlayerListUI();
@@ -519,21 +511,13 @@
             });
 
             room.on('broadcast', { event: 'ban_player' }, (payload) => {
-                const { id, name, updatedBannedMap } = payload.payload;
-
-                if (updatedBannedMap) {
-                    bannedPlayers = updatedBannedMap;
-                } else {
-                    bannedPlayers[id] = name || 'Unknown';
-                }
-                localStorage.setItem('canvas_banned_map', JSON.stringify(bannedPlayers));
+                const { id, name } = payload.payload;
 
                 const targetCursor = document.getElementById(`cursor-${id}`);
                 if (targetCursor) targetCursor.remove();
 
                 delete activePlayers[id];
                 updatePlayerListUI();
-                updateBannedListUI();
 
                 if (id === myId || myName.toLowerCase() === (name || '').toLowerCase()) {
                     triggerBanLockout();
@@ -541,23 +525,13 @@
             });
 
             room.on('broadcast', { event: 'unban_player' }, (payload) => {
-                const { id, targetName, updatedBannedMap } = payload.payload;
+                const { id, targetName } = payload.payload;
 
-                if (updatedBannedMap) {
-                    bannedPlayers = updatedBannedMap;
-                } else {
-                    delete bannedPlayers[id];
+                if (id === myId || id === 'ALL' || (targetName && myName.toLowerCase() === targetName.toLowerCase())) {
+                    isBanned = false;
+                    banOverlay.classList.add('hidden');
+                    location.reload();
                 }
-                localStorage.setItem('canvas_banned_map', JSON.stringify(bannedPlayers));
-
-                const isMeById = id === myId || id === 'ALL';
-                const isMeByName = targetName && myName.toLowerCase() === targetName.toLowerCase();
-
-                if (isMeById || isMeByName || !bannedPlayers[myId]) {
-                    forceUnbanMe();
-                }
-
-                updateBannedListUI();
             });
 
             room.subscribe((status) => {
@@ -614,7 +588,7 @@
                 adminDashboardBox.classList.remove('hidden');
                 adminPasswordInput.value = '';
                 updatePlayerListUI();
-                updateBannedListUI();
+                fetchAndRenderBannedList();
             } else {
                 alert("Incorrect Admin Password!");
             }
@@ -627,18 +601,17 @@
             if (room) room.send({ type: 'broadcast', event: 'clear_board' });
         });
 
-        adminClearBansBtn.addEventListener('click', () => {
-            if (confirm("Reset and unban ALL players?")) {
-                bannedPlayers = {};
-                localStorage.removeItem('canvas_banned_map');
+        adminClearBansBtn.addEventListener('click', async () => {
+            if (confirm("Reset and unban ALL players in Database?")) {
+                await db.from('banned_users').delete().neq('id', 0);
                 if (room) {
                     room.send({
                         type: 'broadcast',
                         event: 'unban_player',
-                        payload: { id: 'ALL', targetName: '', updatedBannedMap: {} }
+                        payload: { id: 'ALL', targetName: '' }
                     });
                 }
-                updateBannedListUI();
+                fetchAndRenderBannedList();
             }
         });
 
@@ -673,40 +646,39 @@
             });
         }
 
-        function updateBannedListUI() {
+        async function fetchAndRenderBannedList() {
             if (adminDashboardBox.classList.contains('hidden')) return;
 
             bannedListContainer.innerHTML = '';
-            const bannedIds = Object.keys(bannedPlayers);
+            const { data, error } = await db.from('banned_users').select('*');
 
-            if (bannedIds.length === 0) {
-                bannedListContainer.innerHTML = `<div style="color: #888; font-size: 12px; text-align: center;">No banned players</div>`;
+            if (error || !data || data.length === 0) {
+                bannedListContainer.innerHTML = `<div style="color: #888; font-size: 12px; text-align: center;">No banned players in DB</div>`;
                 return;
             }
 
-            bannedIds.forEach(id => {
-                const name = bannedPlayers[id];
+            data.forEach(item => {
                 const div = document.createElement('div');
                 div.className = 'player-item';
                 div.innerHTML = `
-                    <span><strong>${name}</strong> <small style="color: #888;">(${id})</small></span>
-                    <button class="secondary-btn" style="padding: 2px 6px; font-size: 11px;" onclick="unbanUser('${id}')">Unban</button>
+                    <span><strong>${item.user_name || 'User'}</strong> <small style="color: #888;">(${item.user_id})</small></span>
+                    <button class="secondary-btn" style="padding: 2px 6px; font-size: 11px;" onclick="unbanUser('${item.user_id}', '${item.user_name}')">Unban</button>
                 `;
                 bannedListContainer.appendChild(div);
             });
         }
 
-        window.banUser = (targetId) => {
+        window.banUser = async (targetId) => {
             const targetName = activePlayers[targetId]?.name || targetId;
             if (confirm(`Are you sure you want to ban player ${targetName}?`)) {
-                bannedPlayers[targetId] = targetName;
-                localStorage.setItem('canvas_banned_map', JSON.stringify(bannedPlayers));
+                // Insert into Supabase banned_users table
+                await db.from('banned_users').insert([{ user_id: targetId, user_name: targetName }]);
 
                 if (room) {
                     room.send({ 
                         type: 'broadcast', 
                         event: 'ban_player', 
-                        payload: { id: targetId, name: targetName, updatedBannedMap: bannedPlayers } 
+                        payload: { id: targetId, name: targetName } 
                     });
                 }
                 
@@ -715,25 +687,24 @@
                 delete activePlayers[targetId];
 
                 updatePlayerListUI();
-                updateBannedListUI();
+                fetchAndRenderBannedList();
             }
         };
 
-        window.unbanUser = (targetId) => {
-            const targetName = bannedPlayers[targetId] || targetId;
-            if (confirm(`Unban player ${targetName}?`)) {
-                delete bannedPlayers[targetId];
-                localStorage.setItem('canvas_banned_map', JSON.stringify(bannedPlayers));
+        window.unbanUser = async (targetId, targetName) => {
+            if (confirm(`Unban player ${targetName || targetId}?`)) {
+                // Delete row from Supabase
+                await db.from('banned_users').delete().eq('user_id', targetId);
 
                 if (room) {
                     room.send({ 
                         type: 'broadcast', 
                         event: 'unban_player', 
-                        payload: { id: targetId, targetName: targetName, updatedBannedMap: bannedPlayers } 
+                        payload: { id: targetId, targetName: targetName } 
                     });
                 }
 
-                updateBannedListUI();
+                fetchAndRenderBannedList();
             }
         };
 
