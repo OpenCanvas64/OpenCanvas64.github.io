@@ -58,6 +58,10 @@
             background-color: #9c27b0;
         }
 
+        button.secondary-btn {
+            background-color: #2196F3;
+        }
+
         canvas {
             background-color: #ffffff;
             cursor: crosshair;
@@ -142,6 +146,13 @@
             text-align: center;
         }
 
+        .error-msg {
+            color: #f44336;
+            font-size: 12px;
+            font-weight: bold;
+            text-align: center;
+        }
+
         .player-list {
             max-height: 150px;
             overflow-y: auto;
@@ -185,6 +196,7 @@
                 <option value="text">Text</option>
             </select>
         </div>
+        <button id="openChangeNameBtn" class="secondary-btn">Change Name</button>
         <button id="openAdminBtn" class="admin-btn">Admin Menu</button>
         <div class="tool-group" id="statusText" style="color: #ffaa00; margin-left: 8px;">
             Connecting...
@@ -199,10 +211,14 @@
 
     <div id="startMenuModal" class="modal-overlay">
         <div class="modal-box">
-            <h2>🎨 Canvas Room</h2>
+            <h2 id="modalTitle">🎨 Canvas Room</h2>
             <label style="font-weight: bold; font-size: 13px;">Enter Your Name:</label>
             <input type="text" id="nameInput" placeholder="Name..." value="Anonymous">
-            <button id="joinRoomBtn" style="padding: 10px; font-size: 16px;">Join Canvas</button>
+            <div id="nameErrorMsg" class="error-msg hidden">That name is already taken!</div>
+            <div style="display: flex; gap: 8px;">
+                <button id="cancelNameBtn" style="background: #888; flex: 1;" class="hidden">Cancel</button>
+                <button id="joinRoomBtn" style="padding: 10px; font-size: 16px; flex: 2;">Join Canvas</button>
+            </div>
         </div>
     </div>
 
@@ -268,10 +284,14 @@
         const cursorsContainer = document.getElementById('cursorsContainer');
         const pingDisplay = document.getElementById('pingDisplay');
 
-        // Modals
+        // Modals & Buttons
         const startMenuModal = document.getElementById('startMenuModal');
+        const modalTitle = document.getElementById('modalTitle');
         const nameInput = document.getElementById('nameInput');
+        const nameErrorMsg = document.getElementById('nameErrorMsg');
         const joinRoomBtn = document.getElementById('joinRoomBtn');
+        const cancelNameBtn = document.getElementById('cancelNameBtn');
+        const openChangeNameBtn = document.getElementById('openChangeNameBtn');
 
         const adminModal = document.getElementById('adminModal');
         const adminLoginBox = document.getElementById('adminLoginBox');
@@ -301,7 +321,7 @@
         localStorage.setItem('canvas_my_id', myId);
 
         let room;
-        let activePlayers = {}; // Track players for Admin Menu
+        let activePlayers = {}; 
         let isBanned = localStorage.getItem('canvas_banned') === 'true';
 
         let isDrawing = false;
@@ -309,10 +329,12 @@
         let lastX = 0, lastY = 0;
         let pendingTextCoords = { x: 0, y: 0 };
 
-        // Pre-fill name from localStorage
         if (localStorage.getItem('canvas_user_name')) {
             nameInput.value = localStorage.getItem('canvas_user_name');
         }
+
+        // Initialize connection early to listen for active names
+        initMultiplayer();
 
         // --- 3. PING LOGIC ---
         function measurePing() {
@@ -332,16 +354,49 @@
         measurePing();
         setInterval(measurePing, 3000);
 
-        // --- 4. START MENU LOGIC ---
+        // --- 4. NAME & START MENU LOGIC ---
+        function isNameTaken(targetName) {
+            const lowerTarget = targetName.toLowerCase();
+            return Object.keys(activePlayers).some(id => {
+                return id !== myId && activePlayers[id].name.toLowerCase() === lowerTarget;
+            });
+        }
+
         joinRoomBtn.addEventListener('click', () => {
             if (isBanned) {
                 alert("You are banned from this canvas room.");
                 return;
             }
-            myName = nameInput.value.trim() || "Anonymous";
+
+            const chosenName = nameInput.value.trim() || "Anonymous";
+
+            if (isNameTaken(chosenName)) {
+                nameErrorMsg.classList.remove('hidden');
+                return;
+            }
+
+            nameErrorMsg.classList.add('hidden');
+            myName = chosenName;
             localStorage.setItem('canvas_user_name', myName);
             startMenuModal.classList.add('hidden');
-            initMultiplayer();
+            
+            // Broadcast cursor to register active name immediately
+            broadcastCursor(0, 0);
+            statusText.innerText = `Connected as ${myName}`;
+            statusText.style.color = "#44ff44";
+        });
+
+        openChangeNameBtn.addEventListener('click', () => {
+            modalTitle.innerText = "✏️ Change Name";
+            joinRoomBtn.innerText = "Save Name";
+            cancelNameBtn.classList.remove('hidden');
+            nameInput.value = myName;
+            nameErrorMsg.classList.add('hidden');
+            startMenuModal.classList.remove('hidden');
+        });
+
+        cancelNameBtn.addEventListener('click', () => {
+            startMenuModal.classList.add('hidden');
         });
 
         // --- 5. MULTIPLAYER SETUP ---
@@ -370,7 +425,7 @@
             room.on('broadcast', { event: 'cursor' }, (payload) => {
                 const d = payload.payload;
                 
-                // Track active player for admin list
+                // Track active players for Name checking & Admin Panel
                 activePlayers[d.id] = { name: d.name, lastSeen: Date.now() };
                 updatePlayerListUI();
 
@@ -386,6 +441,8 @@
                         <div class="cursor-pointer" style="background-color: ${d.color}"></div>
                     `;
                     cursorsContainer.appendChild(cursorEl);
+                } else {
+                    cursorEl.querySelector('.cursor-name').innerText = d.name;
                 }
                 cursorEl.style.left = `${d.x}px`;
                 cursorEl.style.top = `${d.y}px`;
@@ -407,7 +464,6 @@
                     alert("You have been banned by an administrator.");
                     window.location.reload();
                 } else {
-                    // Remove banned player's cursor
                     const bannedCursor = document.getElementById(`cursor-${payload.payload.id}`);
                     if (bannedCursor) bannedCursor.remove();
                     delete activePlayers[payload.payload.id];
@@ -418,16 +474,22 @@
             room.subscribe();
 
             window.addEventListener('mousemove', (e) => {
-                if (room && !isBanned) {
-                    room.send({
-                        type: 'broadcast',
-                        event: 'cursor',
-                        payload: { id: myId, name: myName, x: e.clientX, y: e.clientY, color: colorPicker.value }
-                    });
+                if (!isBanned && startMenuModal.classList.contains('hidden')) {
+                    broadcastCursor(e.clientX, e.clientY);
                 }
             });
 
             loadSavedCanvas();
+        }
+
+        function broadcastCursor(x, y) {
+            if (room && !isBanned) {
+                room.send({
+                    type: 'broadcast',
+                    event: 'cursor',
+                    payload: { id: myId, name: myName, x: x, y: y, color: colorPicker.value }
+                });
+            }
         }
 
         // --- 6. ADMIN SYSTEM ---
@@ -502,7 +564,7 @@
             }
         };
 
-        // Clear out inactive players from admin list every 10 seconds
+        // Clear out inactive players from active list every 10 seconds
         setInterval(() => {
             const now = Date.now();
             Object.keys(activePlayers).forEach(id => {
@@ -527,13 +589,12 @@
                 const img = new Image();
                 img.onload = () => {
                     ctx.drawImage(img, 0, 0);
-                    statusText.innerText = `Connected as ${myName}`;
-                    statusText.style.color = "#44ff44";
+                    if (startMenuModal.classList.contains('hidden')) {
+                        statusText.innerText = `Connected as ${myName}`;
+                        statusText.style.color = "#44ff44";
+                    }
                 };
                 img.src = data[0].image_data;
-            } else {
-                statusText.innerText = `Connected as ${myName}`;
-                statusText.style.color = "#44ff44";
             }
         }
 
@@ -544,7 +605,7 @@
 
         // --- 8. DRAWING LOGIC ---
         canvas.addEventListener('mousedown', (e) => {
-            if (isBanned) return;
+            if (isBanned || !startMenuModal.classList.contains('hidden')) return;
             isDrawing = true;
             startX = e.clientX;
             startY = e.clientY;
@@ -579,7 +640,7 @@
         cancelTextBtn.addEventListener('click', () => textModal.classList.add('hidden'));
 
         canvas.addEventListener('mousemove', (e) => {
-            if (!isDrawing || isBanned) return;
+            if (!isDrawing || isBanned || !startMenuModal.classList.contains('hidden')) return;
             const tool = toolPicker.value;
 
             if (tool === 'pencil') {
@@ -601,7 +662,7 @@
         });
 
         window.addEventListener('mouseup', (e) => {
-            if (isBanned) return;
+            if (isBanned || !startMenuModal.classList.contains('hidden')) return;
             if (isDrawing && toolPicker.value !== 'pencil' && toolPicker.value !== 'text') {
                 const endX = e.clientX;
                 const endY = e.clientY;
