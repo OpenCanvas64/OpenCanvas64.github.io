@@ -223,7 +223,7 @@
             <h1>🚫 YOU ARE BANNED</h1>
             <p>An administrator has removed you from this canvas room.</p>
             <p style="font-size: 12px; opacity: 0.8;">Drawing and room access have been disabled.</p>
-            <button id="manualUnbanCheckBtn" style="margin-top: 15px; background: #ffffff; color: #b40000;">Check If Unbanned</button>
+            <button id="manualUnbanCheckBtn" style="margin-top: 15px; background: #ffffff; color: #b40000; font-weight: bold; padding: 8px 16px;">Clear Local Ban & Rejoin</button>
         </div>
     </div>
 
@@ -381,18 +381,14 @@
         function forceUnbanMe() {
             isBanned = false;
             localStorage.removeItem('canvas_banned');
-            delete bannedPlayers[myId];
-            localStorage.setItem('canvas_banned_map', JSON.stringify(bannedPlayers));
+            localStorage.removeItem('canvas_banned_map');
+            bannedPlayers = {};
             banOverlay.classList.add('hidden');
             location.reload();
         }
 
         manualUnbanCheckBtn.addEventListener('click', () => {
-            if (!bannedPlayers[myId]) {
-                forceUnbanMe();
-            } else {
-                alert("You are still in the admin's banned list!");
-            }
+            forceUnbanMe();
         });
 
         function isNameOrIdBanned(id, name) {
@@ -554,7 +550,7 @@
                 }
                 localStorage.setItem('canvas_banned_map', JSON.stringify(bannedPlayers));
 
-                const isMeById = id === myId;
+                const isMeById = id === myId || id === 'ALL';
                 const isMeByName = targetName && myName.toLowerCase() === targetName.toLowerCase();
 
                 if (isMeById || isMeByName || !bannedPlayers[myId]) {
