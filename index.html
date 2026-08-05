@@ -11,6 +11,7 @@
             overflow: hidden;
             background-color: #f0f0f0;
             font-family: sans-serif;
+            user-select: none;
         }
         
         #toolbar {
@@ -99,7 +100,6 @@
             white-space: nowrap;
         }
 
-        /* Ping Badge */
         #pingDisplay {
             position: absolute;
             bottom: 8px;
@@ -112,10 +112,8 @@
             border-radius: 4px;
             z-index: 100;
             pointer-events: none;
-            user-select: none;
         }
 
-        /* Modals & Menus */
         .modal-overlay {
             position: fixed;
             top: 0;
@@ -177,6 +175,18 @@
         .hidden {
             display: none !important;
         }
+
+        /* Lockout screen for banned users */
+        #banOverlay {
+            background: rgba(180, 0, 0, 0.95);
+            color: white;
+            z-index: 9999;
+            text-align: center;
+        }
+        #banOverlay h1 {
+            font-size: 32px;
+            margin-bottom: 8px;
+        }
     </style>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
@@ -208,6 +218,14 @@
     <div id="cursorsContainer"></div>
 
     <div id="pingDisplay">Ping: -- ms</div>
+
+    <div id="banOverlay" class="modal-overlay hidden">
+        <div style="max-width: 400px; padding: 20px;">
+            <h1>🚫 YOU ARE BANNED</h1>
+            <p>An administrator has removed you from this canvas room.</p>
+            <p style="font-size: 12px; opacity: 0.8;">Drawing and room access have been disabled.</p>
+        </div>
+    </div>
 
     <div id="startMenuModal" class="modal-overlay">
         <div class="modal-box">
@@ -275,12 +293,12 @@
     </div>
 
     <script>
-        // --- 1. SUPABASE CREDENTIALS ---
+        // --- SUPABASE CREDENTIALS ---
         const supabaseUrl = 'https://uyvlsurevydjaxxnlyxh.supabase.co';
         const supabaseKey = 'sb_publishable_XTu1_XJMCZdkYJgeOqJjKw_MgmnLvF9'; 
         const db = window.supabase.createClient(supabaseUrl, supabaseKey);
 
-        // --- 2. ELEMENT REFERENCES ---
+        // --- DOM REFERENCES ---
         const canvas = document.getElementById('drawingCanvas');
         const ctx = canvas.getContext('2d');
         const statusText = document.getElementById('statusText');
@@ -289,7 +307,7 @@
         const cursorsContainer = document.getElementById('cursorsContainer');
         const pingDisplay = document.getElementById('pingDisplay');
 
-        // Modals & Buttons
+        const banOverlay = document.getElementById('banOverlay');
         const startMenuModal = document.getElementById('startMenuModal');
         const modalTitle = document.getElementById('modalTitle');
         const nameInput = document.getElementById('nameInput');
@@ -322,7 +340,7 @@
         canvas.height = window.innerHeight;
         ctx.lineCap = 'round';
 
-        let myName = "Anonymous";
+        let myName = localStorage.getItem('canvas_user_name') || "Anonymous";
         let myId = localStorage.getItem('canvas_my_id') || Math.random().toString(36).substr(2, 9);
         localStorage.setItem('canvas_my_id', myId);
 
@@ -336,31 +354,47 @@
         let lastX = 0, lastY = 0;
         let pendingTextCoords = { x: 0, y: 0 };
 
-        if (localStorage.getItem('canvas_user_name')) {
-            nameInput.value = localStorage.getItem('canvas_user_name');
+        nameInput.value = myName;
+
+        if (isBanned) {
+            triggerBanLockout();
+        } else {
+            initMultiplayer();
         }
 
-        initMultiplayer();
+        // --- BAN LOCKOUT ENFORCEMENT ---
+        function triggerBanLockout() {
+            isBanned = true;
+            localStorage.setItem('canvas_banned', 'true');
+            banOverlay.classList.remove('hidden');
+            startMenuModal.classList.add('hidden');
+            adminModal.classList.add('hidden');
+            textModal.classList.add('hidden');
+            statusText.innerText = "Banned";
+            statusText.style.color = "#ff4444";
+        }
 
-        // --- 3. PING LOGIC ---
+        function isNameOrIdBanned(id, name) {
+            if (bannedPlayers[id]) return true;
+            const lowerName = name.toLowerCase();
+            return Object.values(bannedPlayers).some(bannedName => bannedName.toLowerCase() === lowerName);
+        }
+
+        // --- PING MONITORING ---
         function measurePing() {
             const startTime = performance.now();
-            fetch(`${supabaseUrl}/rest/v1/`, {
-                method: 'HEAD',
-                headers: { 'apikey': supabaseKey }
-            })
+            fetch(`${supabaseUrl}/rest/v1/`, { method: 'HEAD', headers: { 'apikey': supabaseKey } })
             .then(() => {
-                const latency = Math.round(performance.now() - startTime);
-                pingDisplay.innerText = `Ping: ${latency} ms`;
+                pingDisplay.innerText = `Ping: ${Math.round(performance.now() - startTime)} ms`;
             })
             .catch(() => {
-                pingDisplay.innerText = `Ping: Error`;
+                pingDisplay.innerText = `Ping: Reconnecting...`;
             });
         }
         measurePing();
         setInterval(measurePing, 3000);
 
-        // --- 4. NAME & START MENU LOGIC ---
+        // --- START MENU & NAME MANAGEMENT ---
         function isNameTaken(targetName) {
             const lowerTarget = targetName.toLowerCase();
             return Object.keys(activePlayers).some(id => {
@@ -369,12 +403,14 @@
         }
 
         joinRoomBtn.addEventListener('click', () => {
-            if (isBanned) {
-                alert("You are banned from this canvas room.");
-                return;
-            }
+            if (isBanned) return;
 
             const chosenName = nameInput.value.trim() || "Anonymous";
+
+            if (isNameOrIdBanned(myId, chosenName)) {
+                triggerBanLockout();
+                return;
+            }
 
             if (isNameTaken(chosenName)) {
                 nameErrorMsg.classList.remove('hidden');
@@ -392,6 +428,7 @@
         });
 
         openChangeNameBtn.addEventListener('click', () => {
+            if (isBanned) return;
             modalTitle.innerText = "✏️ Change Name";
             joinRoomBtn.innerText = "Save Name";
             cancelNameBtn.classList.remove('hidden');
@@ -400,18 +437,21 @@
             startMenuModal.classList.remove('hidden');
         });
 
-        cancelNameBtn.addEventListener('click', () => {
-            startMenuModal.classList.add('hidden');
-        });
+        cancelNameBtn.addEventListener('click', () => startMenuModal.classList.add('hidden'));
 
-        // --- 5. MULTIPLAYER SETUP ---
+        // --- MULTIPLAYER REALTIME WITH AUTO-RECONNECT ---
         function initMultiplayer() {
             if (room) return;
 
             room = db.channel('global_whiteboard');
 
             room.on('broadcast', { event: 'draw' }, (payload) => {
+                if (isBanned) return;
                 const d = payload.payload;
+
+                // Ignore drawings from banned users
+                if (isNameOrIdBanned(d.senderId, d.senderName || '')) return;
+
                 ctx.strokeStyle = d.color;
                 ctx.fillStyle = d.color;
                 ctx.lineWidth = 5;
@@ -430,7 +470,7 @@
             room.on('broadcast', { event: 'cursor' }, (payload) => {
                 const d = payload.payload;
                 
-                if (bannedPlayers[d.id]) return;
+                if (isNameOrIdBanned(d.id, d.name)) return;
 
                 activePlayers[d.id] = { name: d.name, lastSeen: Date.now() };
                 updatePlayerListUI();
@@ -455,12 +495,14 @@
             });
 
             room.on('broadcast', { event: 'clear_board' }, () => {
-                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                if (!isBanned) ctx.clearRect(0, 0, canvas.width, canvas.height);
             });
 
             room.on('broadcast', { event: 'fill_board' }, (payload) => {
-                ctx.fillStyle = payload.payload.color;
-                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                if (!isBanned) {
+                    ctx.fillStyle = payload.payload.color;
+                    ctx.fillRect(0, 0, canvas.width, canvas.height);
+                }
             });
 
             room.on('broadcast', { event: 'ban_player' }, (payload) => {
@@ -476,11 +518,8 @@
                 updatePlayerListUI();
                 updateBannedListUI();
 
-                if (id === myId) {
-                    isBanned = true;
-                    localStorage.setItem('canvas_banned', 'true');
-                    alert("You have been banned by an administrator.");
-                    window.location.reload();
+                if (id === myId || myName.toLowerCase() === (name || '').toLowerCase()) {
+                    triggerBanLockout();
                 }
             });
 
@@ -493,13 +532,29 @@
                 if (id === myId) {
                     isBanned = false;
                     localStorage.removeItem('canvas_banned');
+                    banOverlay.classList.add('hidden');
                     alert("You have been unbanned by an administrator.");
+                    location.reload();
                 }
 
                 updateBannedListUI();
             });
 
-            room.subscribe();
+            // Automatic reconnection handling for connection drops
+            room.subscribe((status) => {
+                if (status === 'SUBSCRIBED') {
+                    statusText.innerText = `Connected as ${myName}`;
+                    statusText.style.color = "#44ff44";
+                } else if (status === 'TIMED_OUT' || status === 'CLOSED' || status === 'CHANNEL_ERROR') {
+                    statusText.innerText = "Reconnecting...";
+                    statusText.style.color = "#ffaa00";
+                    setTimeout(() => {
+                        db.removeChannel(room);
+                        room = null;
+                        initMultiplayer();
+                    }, 2000);
+                }
+            });
 
             window.addEventListener('mousemove', (e) => {
                 if (!isBanned && startMenuModal.classList.contains('hidden')) {
@@ -520,18 +575,10 @@
             }
         }
 
-        // --- 6. ADMIN SYSTEM ---
-        openAdminBtn.addEventListener('click', () => {
-            adminModal.classList.remove('hidden');
-        });
-
-        closeAdminLoginBtn.addEventListener('click', () => {
-            adminModal.classList.add('hidden');
-        });
-
-        closeAdminDashBtn.addEventListener('click', () => {
-            adminModal.classList.add('hidden');
-        });
+        // --- ADMIN SYSTEM ---
+        openAdminBtn.addEventListener('click', () => adminModal.classList.remove('hidden'));
+        closeAdminLoginBtn.addEventListener('click', () => adminModal.classList.add('hidden'));
+        closeAdminDashBtn.addEventListener('click', () => adminModal.classList.add('hidden'));
 
         submitAdminLoginBtn.addEventListener('click', () => {
             if (adminPasswordInput.value === "Admin2341") {
@@ -651,7 +698,7 @@
             updatePlayerListUI();
         }, 10000);
 
-        // --- 7. DATA LOGIC ---
+        // --- CLOUD CANVAS DATA ---
         async function loadSavedCanvas() {
             const { data } = await db
                 .from('whiteboard')
@@ -662,22 +709,19 @@
             if (data && data.length > 0 && data[0].image_data) {
                 const img = new Image();
                 img.onload = () => {
-                    ctx.drawImage(img, 0, 0);
-                    if (startMenuModal.classList.contains('hidden')) {
-                        statusText.innerText = `Connected as ${myName}`;
-                        statusText.style.color = "#44ff44";
-                    }
+                    if (!isBanned) ctx.drawImage(img, 0, 0);
                 };
                 img.src = data[0].image_data;
             }
         }
 
         async function saveToCloud() {
+            if (isBanned) return;
             const canvasData = canvas.toDataURL(); 
             await db.from('whiteboard').insert([{ image_data: canvasData }]);
         }
 
-        // --- 8. DRAWING LOGIC ---
+        // --- DRAWING LOGIC WITH STRICT BAN GUARDS ---
         canvas.addEventListener('mousedown', (e) => {
             if (isBanned || !startMenuModal.classList.contains('hidden')) return;
             isDrawing = true;
@@ -704,7 +748,7 @@
                 
                 room.send({
                     type: 'broadcast', event: 'draw',
-                    payload: { tool: 'text', x0: pendingTextCoords.x, y0: pendingTextCoords.y, text: userInput, color: colorPicker.value }
+                    payload: { tool: 'text', senderId: myId, senderName: myName, x0: pendingTextCoords.x, y0: pendingTextCoords.y, text: userInput, color: colorPicker.value }
                 });
                 saveToCloud();
             }
@@ -727,7 +771,7 @@
 
                 room.send({
                     type: 'broadcast', event: 'draw',
-                    payload: { tool: 'pencil', x0: lastX, y0: lastY, x1: e.clientX, y1: e.clientY, color: colorPicker.value }
+                    payload: { tool: 'pencil', senderId: myId, senderName: myName, x0: lastX, y0: lastY, x1: e.clientX, y1: e.clientY, color: colorPicker.value }
                 });
                 
                 lastX = e.clientX;
@@ -748,7 +792,7 @@
                     ctx.fillRect(startX, startY, width, height);
                     room.send({
                         type: 'broadcast', event: 'draw',
-                        payload: { tool: 'square', x0: startX, y0: startY, w: width, h: height, color: colorPicker.value }
+                        payload: { tool: 'square', senderId: myId, senderName: myName, x0: startX, y0: startY, w: width, h: height, color: colorPicker.value }
                     });
                 } 
                 else if (toolPicker.value === 'circle') {
@@ -758,7 +802,7 @@
                     ctx.fill();
                     room.send({
                         type: 'broadcast', event: 'draw',
-                        payload: { tool: 'circle', x0: startX, y0: startY, r: radius, color: colorPicker.value }
+                        payload: { tool: 'circle', senderId: myId, senderName: myName, x0: startX, y0: startY, r: radius, color: colorPicker.value }
                     });
                 }
             }
