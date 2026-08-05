@@ -176,7 +176,6 @@
             display: none !important;
         }
 
-        /* Lockout screen for banned users */
         #banOverlay {
             background: rgba(180, 0, 0, 0.95);
             color: white;
@@ -293,12 +292,12 @@
     </div>
 
     <script>
-        // --- SUPABASE CREDENTIALS ---
+        // Supabase Initialization
         const supabaseUrl = 'https://uyvlsurevydjaxxnlyxh.supabase.co';
         const supabaseKey = 'sb_publishable_XTu1_XJMCZdkYJgeOqJjKw_MgmnLvF9'; 
         const db = window.supabase.createClient(supabaseUrl, supabaseKey);
 
-        // --- DOM REFERENCES ---
+        // UI References
         const canvas = document.getElementById('drawingCanvas');
         const ctx = canvas.getContext('2d');
         const statusText = document.getElementById('statusText');
@@ -353,6 +352,7 @@
         let startX = 0, startY = 0;
         let lastX = 0, lastY = 0;
         let pendingTextCoords = { x: 0, y: 0 };
+        let reconnectTimeout = null;
 
         nameInput.value = myName;
 
@@ -362,7 +362,6 @@
             initMultiplayer();
         }
 
-        // --- BAN LOCKOUT ENFORCEMENT ---
         function triggerBanLockout() {
             isBanned = true;
             localStorage.setItem('canvas_banned', 'true');
@@ -376,11 +375,10 @@
 
         function isNameOrIdBanned(id, name) {
             if (bannedPlayers[id]) return true;
-            const lowerName = name.toLowerCase();
+            const lowerName = (name || '').toLowerCase();
             return Object.values(bannedPlayers).some(bannedName => bannedName.toLowerCase() === lowerName);
         }
 
-        // --- PING MONITORING ---
         function measurePing() {
             const startTime = performance.now();
             fetch(`${supabaseUrl}/rest/v1/`, { method: 'HEAD', headers: { 'apikey': supabaseKey } })
@@ -394,7 +392,6 @@
         measurePing();
         setInterval(measurePing, 3000);
 
-        // --- START MENU & NAME MANAGEMENT ---
         function isNameTaken(targetName) {
             const lowerTarget = targetName.toLowerCase();
             return Object.keys(activePlayers).some(id => {
@@ -439,7 +436,6 @@
 
         cancelNameBtn.addEventListener('click', () => startMenuModal.classList.add('hidden'));
 
-        // --- MULTIPLAYER REALTIME WITH AUTO-RECONNECT ---
         function initMultiplayer() {
             if (room) return;
 
@@ -449,7 +445,6 @@
                 if (isBanned) return;
                 const d = payload.payload;
 
-                // Ignore drawings from banned users
                 if (isNameOrIdBanned(d.senderId, d.senderName || '')) return;
 
                 ctx.strokeStyle = d.color;
@@ -540,19 +535,26 @@
                 updateBannedListUI();
             });
 
-            // Automatic reconnection handling for connection drops
             room.subscribe((status) => {
                 if (status === 'SUBSCRIBED') {
+                    if (reconnectTimeout) clearTimeout(reconnectTimeout);
+                    reconnectTimeout = null;
                     statusText.innerText = `Connected as ${myName}`;
                     statusText.style.color = "#44ff44";
                 } else if (status === 'TIMED_OUT' || status === 'CLOSED' || status === 'CHANNEL_ERROR') {
                     statusText.innerText = "Reconnecting...";
                     statusText.style.color = "#ffaa00";
-                    setTimeout(() => {
-                        db.removeChannel(room);
-                        room = null;
-                        initMultiplayer();
-                    }, 2000);
+
+                    if (!reconnectTimeout) {
+                        reconnectTimeout = setTimeout(async () => {
+                            reconnectTimeout = null;
+                            if (room) {
+                                await db.removeChannel(room);
+                                room = null;
+                            }
+                            initMultiplayer();
+                        }, 10000);
+                    }
                 }
             });
 
@@ -575,7 +577,6 @@
             }
         }
 
-        // --- ADMIN SYSTEM ---
         openAdminBtn.addEventListener('click', () => adminModal.classList.remove('hidden'));
         closeAdminLoginBtn.addEventListener('click', () => adminModal.classList.add('hidden'));
         closeAdminDashBtn.addEventListener('click', () => adminModal.classList.add('hidden'));
@@ -698,7 +699,6 @@
             updatePlayerListUI();
         }, 10000);
 
-        // --- CLOUD CANVAS DATA ---
         async function loadSavedCanvas() {
             const { data } = await db
                 .from('whiteboard')
@@ -721,7 +721,6 @@
             await db.from('whiteboard').insert([{ image_data: canvasData }]);
         }
 
-        // --- DRAWING LOGIC WITH STRICT BAN GUARDS ---
         canvas.addEventListener('mousedown', (e) => {
             if (isBanned || !startMenuModal.classList.contains('hidden')) return;
             isDrawing = true;
