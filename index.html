@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>OpenCanvas64 - Pro Lobby</title>
+    <title>OpenCanvas64</title>
     <style>
         body { margin: 0; background-color: #2a2a2a; font-family: sans-serif; user-select: none; overflow: auto; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
         
@@ -21,6 +21,7 @@
         .room-details { display: flex; flex-direction: column; gap: 2px; flex: 1; }
         .room-title { font-size: 15px; font-weight: bold; color: #fff; }
         .room-meta { font-size: 11px; color: #aaa; }
+        .dev-users-list { font-size: 11px; color: #ce93d8; font-style: italic; margin-top: 4px; word-break: break-all; }
 
         /* CANVAS & UI STYLES */
         #toolbar { position: fixed; top: 10px; left: 50%; transform: translateX(-50%); background: rgba(0, 0, 0, 0.85); padding: 8px 18px; border-radius: 8px; z-index: 100; display: flex; gap: 12px; align-items: center; color: white; box-shadow: 0 4px 12px rgba(0,0,0,0.3); }
@@ -417,54 +418,111 @@
             });
         };
 
-        // --- LOBBY LOGIC ---
+        // --- REALTIME LOBBY ONLINE PLAYER TRACKER ---
         async function fetchLobbyData() {
+            const { data: allRooms } = await db.from('rooms').select('*').order('created_at', { ascending: false });
+            const rooms = allRooms || [];
+
+            // Query active presence stats for each server
+            const roomStats = {};
+            await Promise.all(rooms.map(room => {
+                return new Promise((resolve) => {
+                    const tempChan = db.channel(`room_${room.room_id}`, { config: { presence: { key: myId } } });
+                    tempChan.subscribe((status) => {
+                        if (status === 'SUBSCRIBED') {
+                            setTimeout(() => {
+                                const state = tempChan.presenceState();
+                                let count = 0;
+                                let users = [];
+                                Object.keys(state).forEach(key => {
+                                    state[key].forEach(p => {
+                                        count++;
+                                        if (p.name) users.push(p.name);
+                                    });
+                                });
+                                roomStats[room.room_id] = { count, users };
+                                db.removeChannel(tempChan);
+                                resolve();
+                            }, 300);
+                        } else {
+                            resolve();
+                        }
+                    });
+                });
+            }));
+
+            // Developer View Render
             if (isDev) {
                 document.getElementById('devSection').classList.remove('hidden');
-                const { data: allRooms } = await db.from('rooms').select('*').order('created_at', { ascending: false });
-                document.getElementById('devRoomsList').innerHTML = (allRooms||[]).map(room => `
+                document.getElementById('devRoomsList').innerHTML = rooms.map(room => {
+                    const stats = roomStats[room.room_id] || { count: 0, users: [] };
+                    const userText = stats.users.length ? stats.users.join(', ') : 'None';
+                    return `
                     <div class="room-row">
-                        <div class="room-details"><span class="room-title">${room.room_name}</span><span class="room-meta">ID: ${room.room_id} | Pass: ${room.admin_password}</span></div>
+                        <div class="room-details">
+                            <span class="room-title">${room.room_name} <span style="color:#4CAF50; font-size:12px;">🟢 ${stats.count} Online</span></span>
+                            <span class="room-meta">ID: ${room.room_id} | Pass: ${room.admin_password}</span>
+                            <div class="dev-users-list">👥 Online Users: ${userText}</div>
+                        </div>
                         <div style="display:flex; gap:6px;">
                             <button class="danger-btn icon-btn" onclick="deleteRoom('${room.room_id}')">🗑️</button>
                             <button class="dev-btn icon-btn" onclick="joinRoomById('${room.room_id}')">Join</button>
                         </div>
-                    </div>`).join('');
+                    </div>`;
+                }).join('');
             }
 
-            const { data: pubData } = await db.from('rooms').select('*').eq('is_public', true).order('created_at', { ascending: false });
-            document.getElementById('publicRoomsList').innerHTML = (pubData||[]).map(room => `
+            // Public Servers Render
+            const pubRooms = rooms.filter(r => r.is_public);
+            document.getElementById('publicRoomsList').innerHTML = pubRooms.map(room => {
+                const count = roomStats[room.room_id]?.count || 0;
+                return `
                 <div class="room-row">
-                    <div class="room-details"><span class="room-title">${room.room_name}</span><span class="room-meta">Size: ${room.width}x${room.height}</span></div>
+                    <div class="room-details">
+                        <span class="room-title">${room.room_name} <span style="color:#4CAF50; font-size:12px;">🟢 ${count} Online</span></span>
+                        <span class="room-meta">Size: ${room.width}x${room.height}</span>
+                    </div>
                     <div style="display:flex; gap:6px;">
                         ${(room.creator_id === myId || isDev) ? `<button class="danger-btn icon-btn" onclick="deleteRoom('${room.room_id}')">🗑️</button>` : ''}
                         <button class="secondary-btn" onclick="joinRoomById('${room.room_id}')">Join</button>
                     </div>
-                </div>`).join('');
+                </div>`;
+            }).join('');
 
-            const { data: myData } = await db.from('rooms').select('*').eq('creator_id', myId).order('created_at', { ascending: false });
-            document.getElementById('myCreatedRoomsList').innerHTML = (myData||[]).map(room => `
+            // My Created Servers Render
+            const myRooms = rooms.filter(r => r.creator_id === myId);
+            document.getElementById('myCreatedRoomsList').innerHTML = myRooms.map(room => {
+                const count = roomStats[room.room_id]?.count || 0;
+                return `
                 <div class="room-row">
-                    <div class="room-details"><span class="room-title">${room.room_name}</span><span class="room-meta">${room.is_public ? '🌐 Public' : '🔒 Private'} | Code: ${room.room_code || 'N/A'}</span></div>
+                    <div class="room-details">
+                        <span class="room-title">${room.room_name} <span style="color:#4CAF50; font-size:12px;">🟢 ${count} Online</span></span>
+                        <span class="room-meta">${room.is_public ? '🌐 Public' : '🔒 Private'} | Code: ${room.room_code || 'N/A'}</span>
+                    </div>
                     <div style="display:flex; gap:6px;">
                         <button class="danger-btn icon-btn" onclick="deleteRoom('${room.room_id}')">🗑️</button>
                         <button class="secondary-btn" onclick="joinRoomById('${room.room_id}')">Join</button>
                     </div>
-                </div>`).join('');
+                </div>`;
+            }).join('');
 
+            // Recent Private Rooms Render
             const recentContainer = document.getElementById('recentRoomsList');
             const validRecent = recentRooms.filter(r => r && r.room_id);
             if (validRecent.length === 0) {
                 recentContainer.innerHTML = '<span style="color:#888;">No recent rooms...</span>';
             } else {
-                recentContainer.innerHTML = validRecent.map(room => `
+                recentContainer.innerHTML = validRecent.map(room => {
+                    const count = roomStats[room.room_id]?.count || 0;
+                    return `
                     <div class="room-row">
                         <div class="room-details">
-                            <span class="room-title">${room.room_name || 'Private Room'}</span>
+                            <span class="room-title">${room.room_name || 'Private Room'} <span style="color:#4CAF50; font-size:12px;">🟢 ${count} Online</span></span>
                             <span class="room-meta">Code: ${room.room_code || 'N/A'}</span>
                         </div>
                         <button class="secondary-btn" onclick="joinRoomById('${room.room_id}')">Join</button>
-                    </div>`).join('');
+                    </div>`;
+                }).join('');
             }
         }
         fetchLobbyData(); document.getElementById('refreshPublicBtn').addEventListener('click', fetchLobbyData);
@@ -907,7 +965,7 @@
                     return;
                 }
 
-                // --- NEW: KICK COMMAND (Admin & Dev) ---
+                // --- KICK COMMAND (Admin & Dev) ---
                 if (cmd === '/kick') {
                     const isAdmin = isDev || localStorage.getItem(`admin_${currentRoomId}`) === 'true';
                     if (!isAdmin) return appendChat("[System]: You do not have permission to use /kick.", 'system');
@@ -934,7 +992,7 @@
                     return;
                 }
 
-                // --- NEW: UNBAN ALL (Dev Only) ---
+                // --- UNBAN ALL (Dev Only) ---
                 if (cmd === '/unbanall') {
                     if (!isDev) return appendChat("[System]: Only Developers can use /unbanall.", 'system');
                     
@@ -947,7 +1005,7 @@
                     return;
                 }
 
-                // --- NEW: UNMUTE ALL (Dev Only) ---
+                // --- UNMUTE ALL (Dev Only) ---
                 if (cmd === '/unmuteall') {
                     if (!isDev) return appendChat("[System]: Only Developers can use /unmuteall.", 'system');
                     
